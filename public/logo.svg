@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- 云朵轮廓 -->
+  <path d="M60 140h80a30 30 0 0 0 0-60 40 40 0 0 0-78-10 25 25 0 0 0-2 70z"
+        fill="none" stroke="#0A3761" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- 拼图块 1 -->
+  <rect x="80" y="90" width="40" height="40" fill="#0A3761"/>
+  <!-- 拼图缺口 (左下) -->
+  <circle cx="80" cy="110" r="6" fill="white"/>
+  <!-- 拼图缺口 (上右) -->
+  <circle cx="100" cy="90" r="6" fill="white"/>
+  <!-- 拼图缺口 (右下) -->
+  <circle cx="120" cy="110" r="6" fill="white"/>
+</svg>
