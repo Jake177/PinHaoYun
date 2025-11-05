@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
 import Logo from "./logo";
 
-export default function Navbar() {
-  const cookieStore = cookies();
-  const isAuthenticated = Boolean(cookieStore.get("id_token"));
+type NavbarProps = {
+  isAuthenticated: boolean;
+};
+
+export default function Navbar({ isAuthenticated }: NavbarProps) {
   const href = isAuthenticated ? "/dashboard" : "/login";
   const ariaLabel = isAuthenticated ? "返回 PinHaoYun 控制台" : "返回登录页面";
 

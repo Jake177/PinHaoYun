@@ -25,14 +25,15 @@ export const metadata: Metadata = {
   title: "登录 | PinHaoYun",
 };
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
-  const status = getParam(searchParams, "status");
-  const email = getParam(searchParams, "email") || "";
-  const nextParam = getParam(searchParams, "next");
+  const params = await searchParams;
+  const status = getParam(params, "status");
+  const email = getParam(params, "email") || "";
+  const nextParam = getParam(params, "next");
   const redirectTo =
     typeof nextParam === "string" && nextParam.startsWith("/")
       ? nextParam

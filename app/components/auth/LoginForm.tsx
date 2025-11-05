@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Errors from "./Errors";
 import Feedback from "./Feedback";
+import { Route } from "next";
 
 type LoginFormProps = {
   defaultEmail?: string;
@@ -94,10 +95,9 @@ export default function LoginForm({
             ? `&next=${encodeURIComponent(redirectTarget)}`
             : "";
           router.push(
-            `/verify?status=unconfirmed&email=${encodeURIComponent(
+            (`/verify?status=unconfirmed&email=${encodeURIComponent(
               normalizedEmail,
-            )}${nextQuery}`,
-          );
+            )}${nextQuery}`) as Route);
           return;
         }
 
@@ -105,7 +105,7 @@ export default function LoginForm({
         return;
       }
 
-      router.replace(redirectTarget);
+      router.replace(redirectTarget as Route);
     } catch (error) {
       setErrors([describeError(error)]);
     } finally {

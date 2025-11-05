@@ -27,14 +27,15 @@ export const metadata: Metadata = {
   title: "验证账户 | PinHaoYun",
 };
 
-export default function VerifyPage({
+export default async function VerifyPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
-  const email = getParam(searchParams, "email") || "";
-  const status = getParam(searchParams, "status");
-  const nextParam = getParam(searchParams, "next");
+  const params = await searchParams;
+  const email = getParam(params, "email") || "";
+  const status = getParam(params, "status");
+  const nextParam = getParam(params, "next");
   const redirectTo =
     typeof nextParam === "string" && nextParam.startsWith("/")
       ? nextParam

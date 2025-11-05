@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 export default async function DashboardPage() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const token = (await cookieStore).get("id_token")?.value;
   let username = "Explorer";
   if (token) {
