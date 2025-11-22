@@ -4,26 +4,26 @@ This project is now configured as a minimal [Next.js](https://nextjs.org/) appli
 
 ## Getting Started
 
-Install dependencies:
+Install dependencies (uses pnpm):
 
 ```bash
-npm install
+pnpm install
 ```
 
 Run the development server:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the result. You can start editing the UI by modifying files in the `app/` directory; the page auto-updates as you edit the file.
 
-## Available Scripts
+## Available Scripts (pnpm)
 
-- `npm run dev` – Starts the development server.
-- `npm run build` – Builds the production application.
-- `npm run start` – Runs the production build locally.
-- `npm run lint` – Runs ESLint using the Next.js shareable config.
+- `pnpm dev` – Starts the development server.
+- `pnpm build` – Builds the production application.
+- `pnpm start` – Runs the production build locally.
+- `pnpm lint` – Runs ESLint using the Next.js shareable config.
 
 ## Project Structure
 
