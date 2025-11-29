@@ -2,6 +2,9 @@
 
 This project is now configured as a minimal [Next.js](https://nextjs.org/) application using the App Router. It includes TypeScript support and Material UI dependencies.
 
+## .aws
+Folder contains aws realted files
+
 ## Getting Started
 
 Install dependencies (uses pnpm):
