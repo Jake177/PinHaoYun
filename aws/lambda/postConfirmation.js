@@ -17,15 +17,14 @@ exports.handler = async (event) => {
     new PutItemCommand({
       TableName: tableName,
       Item: {
-        // PK = email, SK = create_time (ISO string)
         email: { S: email },
-        create_time: { S: now },
         username: { S: username },
         emailVerified: { BOOL: emailVerified },
+        videos: { L: [] },
         createdAt: { S: now },
         updatedAt: { S: now }
       },
-      ConditionExpression: "attribute_not_exists(email) AND attribute_not_exists(create_time)"
+      ConditionExpression: "attribute_not_exists(email)"
     })
   );
   return event;

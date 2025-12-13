@@ -28,6 +28,14 @@ Open [http://localhost:3000](http://localhost:3000) to see the result. You can s
 - `pnpm start` – Runs the production build locally.
 - `pnpm lint` – Runs ESLint using the Next.js shareable config.
 
+## Env for Video Upload (server/API)
+
+- `S3_ORIGINAL_BUCKET` – 原始视频桶名称（如 pinhaoyun-original）
+- `S3_THUMBNAIL_BUCKET` – 预览视频桶名称（如 pinhaoyun-thumbnail）
+- `VIDEOS_TABLE` – DynamoDB 表名（存视频元数据）
+- `SQS_VIDEO_INGEST_QUEUE_URL` – 上传完成后入队的 SQS（Lambda ingest 消费）
+- `PRESIGN_TTL_SECONDS` – 预签名 URL 有效期（可选，默认 900）
+
 ## Project Structure
 
 ```
