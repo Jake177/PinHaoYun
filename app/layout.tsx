@@ -10,6 +10,8 @@ export const metadata: Metadata = {
   description: "App Router bootstrap for Pin Hao Yun.",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{

@@ -26,7 +26,7 @@ export default function LogoutButton() {
       onClick={handleClick}
       disabled={loading}
     >
-      {loading ? "正在退出..." : "退出并返回登录"}
+      {loading ? "正在退出..." : "退出登录"}
     </button>
   );
 }

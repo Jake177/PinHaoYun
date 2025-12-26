@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Logo from "./logo";
+import NavbarLogout from "./navbar-logout";
 
 type NavbarProps = {
   isAuthenticated: boolean;
@@ -18,6 +19,7 @@ export default function Navbar({ isAuthenticated }: NavbarProps) {
       >
         <Logo />
       </Link>
+      <NavbarLogout isAuthenticated={isAuthenticated} />
     </header>
   );
 }

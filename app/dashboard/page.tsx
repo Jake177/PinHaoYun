@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import { decodeIdToken } from "@/app/lib/jwt";
-import LogoutButton from "@/app/components/dashboard/LogoutButton";
 import DashboardClient from "@/app/components/dashboard/DashboardClient";
 
 export const metadata = {
@@ -30,9 +29,6 @@ export default async function DashboardPage() {
   return (
     <main className="dashboard-main">
       <DashboardClient userId={userId} username={username} />
-      <div style={{ marginTop: "2rem" }}>
-        <LogoutButton />
-      </div>
     </main>
   );
 }

@@ -58,7 +58,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           <p className="auth-hero__eyebrow">PinHaoYun</p>
           <h1>{greeting}</h1>
           <p className="muted">
-            上传你的原始视频（MOV/MP4/HEVC），我们会生成低清预览供在线播放，原视频用于下载。
+            上传你的原始视频。
           </p>
         </div>
         <VideoUploader onUploaded={fetchVideos} />
@@ -66,9 +66,39 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
       <section className="dashboard-panel">
         <div className="panel-heading">
-          <h2>我的视频</h2>
-          {loading ? <span className="pill">加载中...</span> : null}
-          {error ? <span className="pill pill--error">{error}</span> : null}
+          <div className="panel-title">
+            <h2>我的视频</h2>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={fetchVideos}
+              disabled={loading}
+              aria-label="刷新视频列表"
+              title="刷新"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M20 12a8 8 0 1 1-2.34-5.66"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M20 4v6h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+          <div className="panel-status">
+            {loading ? <span className="pill">加载中...</span> : null}
+            {error ? <span className="pill pill--error">{error}</span> : null}
+          </div>
         </div>
         <VideoGrid videos={videos} onRefresh={fetchVideos} />
       </section>

@@ -38,48 +38,58 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
             <p>还没有上传视频，点击上方“上传视频”开始吧。</p>
           </div>
         ) : (
-          videos.map((video) => (
-            <article className="video-card" key={video.id}>
-              <div
-                className="video-thumb"
-                role="button"
-                tabIndex={0}
-                onClick={() => setPreview(video)}
-                onKeyDown={(e) => e.key === "Enter" && setPreview(video)}
-              >
-                {video.thumbnailUrl ? (
-                  <video src={video.thumbnailUrl} muted preload="metadata" />
-                ) : (
-                  <div className="thumb-fallback">预览生成中</div>
-                )}
-              </div>
-              <div className="video-meta">
-                <p className="ellipsis">{video.originalName || video.id}</p>
-                <div className="meta-row">
-                  <span className="pill">{video.status || "未知"}</span>
-                  <span className="muted">{formatSize(video.size)}</span>
-                </div>
-              </div>
-              <div className="video-actions">
-                <button
-                  type="button"
-                  className="pill"
+          videos.map((video) => {
+            const previewUrl = video.thumbnailUrl || video.originalUrl || "";
+            return (
+              <article className="video-card" key={video.id}>
+                <div
+                  className="video-thumb"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setPreview(video)}
-                  disabled={!video.thumbnailUrl}
+                  onKeyDown={(e) => e.key === "Enter" && setPreview(video)}
                 >
-                  播放
-                </button>
-                <a
-                  className="pill pill--primary"
-                  href={video.originalUrl || undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  下载原视频
-                </a>
-              </div>
-            </article>
-          ))
+                  {previewUrl ? (
+                    <>
+                      <video src={previewUrl} muted preload="metadata" />
+                      <span className="video-play">▶</span>
+                    </>
+                  ) : (
+                    <div className="thumb-fallback">暂无预览</div>
+                  )}
+                </div>
+                <div className="video-meta">
+                  <p className="ellipsis">{video.originalName || video.id}</p>
+                  <div className="meta-row">
+                    <span className="pill">{video.status || "未知"}</span>
+                    <span className="muted">{formatSize(video.size)}</span>
+                  </div>
+                </div>
+                <div className="video-actions">
+                  <button
+                    type="button"
+                    className="pill"
+                    onClick={() => setPreview(video)}
+                    disabled={!previewUrl}
+                  >
+                    播放
+                  </button>
+                  {video.originalUrl ? (
+                    <a
+                      className="pill pill--primary"
+                      href={video.originalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      下载原视频
+                    </a>
+                  ) : (
+                    <span className="pill">暂无下载</span>
+                  )}
+                </div>
+              </article>
+            );
+          })
         )}
       </div>
 
@@ -101,15 +111,15 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
                 关闭
               </button>
             </header>
-            {preview.thumbnailUrl ? (
+            {preview.thumbnailUrl || preview.originalUrl ? (
               <video
-                src={preview.thumbnailUrl}
+                src={preview.thumbnailUrl || preview.originalUrl || ""}
                 controls
                 preload="metadata"
                 style={{ width: "100%", maxHeight: "60vh" }}
               />
             ) : (
-              <div className="empty-state">预览生成中...</div>
+              <div className="empty-state">暂无预览</div>
             )}
           </div>
         </div>

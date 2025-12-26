@@ -119,7 +119,7 @@ export default function LoginForm({
       <Feedback message={feedback} />
       <form onSubmit={handleSubmit} noValidate>
         <div className="field-group">
-          <label htmlFor="email">邮箱（登录名）</label>
+          <label htmlFor="email">邮箱</label>
           <input
             id="email"
             name="email"
