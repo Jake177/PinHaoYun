@@ -6,7 +6,7 @@ import { decodeIdToken } from "@/app/lib/jwt";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const region = process.env.AWS_REGION || "ap-southeast-2";
+const region = "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const thumbnailBucket = process.env.S3_THUMBNAIL_BUCKET;
