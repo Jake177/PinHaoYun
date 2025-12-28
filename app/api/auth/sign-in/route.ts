@@ -15,7 +15,10 @@ if (!region || !userPoolId || !clientId || !clientSecret) {
 }
 
 function secretHash(username: string) {
-  const hmac = crypto.createHmac("sha256", clientSecret as string);
+  if (!clientSecret) {
+    throw new Error("服务器配置错误: COGNITO_CLIENT_SECRET 未定义");
+  }
+  const hmac = crypto.createHmac("sha256", clientSecret);
   hmac.update(username + clientId);
   return hmac.digest("base64");
 }
