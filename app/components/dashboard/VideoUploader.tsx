@@ -8,7 +8,7 @@ const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
 type UploadState = {
   name: string;
   progress: number;
-  status: "pending" | "uploading" | "done" | "error";
+  status: "pending" | "hashing" | "uploading" | "done" | "skipped" | "error";
   message?: string;
 };
 
@@ -36,6 +36,30 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     for (const file of files) {
       setItems((prev) =>
         prev.map((item) =>
+          item.name === file.name ? { ...item, status: "hashing" } : item,
+        ),
+      );
+      let contentHash = "";
+      try {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+        contentHash = Array.from(new Uint8Array(hashBuffer))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      } catch {
+        setError("计算文件校验失败，请重试");
+        setItems((prev) =>
+          prev.map((item) =>
+            item.name === file.name
+              ? { ...item, status: "error", message: "校验失败" }
+              : item,
+          ),
+        );
+        continue;
+      }
+
+      setItems((prev) =>
+        prev.map((item) =>
           item.name === file.name ? { ...item, status: "uploading" } : item,
         ),
       );
@@ -52,17 +76,35 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
             fileName: file.name,
             contentType: file.type,
             size: file.size,
+            contentHash,
           }),
         });
         if (!presignResp.ok) {
           const data = (await presignResp.json()) as { error?: string };
           throw new Error(data.error || "获取上传地址失败");
         }
-        const { uploadUrl, key, bucket } = (await presignResp.json()) as {
+        const {
+          uploadUrl,
+          key,
+          bucket,
+          duplicate,
+        } = (await presignResp.json()) as {
           uploadUrl: string;
           key: string;
           bucket: string;
+          duplicate?: boolean;
         };
+
+        if (duplicate) {
+          setItems((prev) =>
+            prev.map((item) =>
+              item.name === file.name
+                ? { ...item, status: "skipped", message: "已存在相同视频，跳过" }
+                : item,
+            ),
+          );
+          continue;
+        }
 
         // Upload to S3
         const putResp = await fetch(uploadUrl, {
@@ -85,6 +127,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
             contentType: file.type,
             size: file.size,
             uploadedAt: new Date().toISOString(),
+            contentHash,
           }),
         });
 
@@ -145,10 +188,14 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
             <li key={item.name} className="uploader__item">
               <span className="ellipsis">{item.name}</span>
               <span className="pill">
-                {item.status === "uploading"
+                {item.status === "hashing"
+                  ? "校验中"
+                  : item.status === "uploading"
                   ? "上传中"
                   : item.status === "done"
                   ? "完成"
+                  : item.status === "skipped"
+                  ? "已跳过"
                   : item.status === "error"
                   ? "失败"
                   : "待上传"}

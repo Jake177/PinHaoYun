@@ -1,25 +1,16 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import {
   DynamoDBClient,
-  UpdateItemCommand,
+  TransactWriteItemsCommand,
 } from "@aws-sdk/client-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
-const queueUrl =
-  process.env.SQS_VIDEO_INGEST_QUEUE_URL;
-const region =
-  process.env.AWS_REGION ||
-  "ap-southeast-2";
+const region = process.env.AWS_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 
-if (!queueUrl) {
-  console.warn("[videos/notify] Missing env SQS_VIDEO_INGEST_QUEUE_URL");
-}
-
-const sqs = new SQSClient({ region });
 const ddb = new DynamoDBClient({ region });
+const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024 * 1024; // 256GB
 
 export async function POST(request: Request) {
   try {
@@ -42,6 +33,7 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json({ error: "Missing user id" }, { status: 401 });
     }
+    const normalizedUser = userId.toLowerCase();
 
     const body = (await request.json()) as {
       bucket: string;
@@ -50,62 +42,87 @@ export async function POST(request: Request) {
       contentType?: string;
       size?: number;
       uploadedAt?: string;
+      contentHash?: string;
     };
     const now = new Date().toISOString();
     const createdAt = body.uploadedAt || now;
     const videoId = body.key?.split("/").pop() || "";
+    const sk = `VIDEO#${videoId}`;
+    const sizeNumber = Number(body.size || 0);
+    const contentHash = body.contentHash;
 
-    // 1) 直接落库到单条记录（无 SK），将视频作为列表追加
-    await ddb.send(
-      new UpdateItemCommand({
-        TableName: tableName,
-        Key: { email: { S: userId.toLowerCase() } },
-        UpdateExpression:
-          "SET videos = list_append(if_not_exists(videos, :empty), :vid), updatedAt = :now, createdAt = if_not_exists(createdAt, :now)",
-        ExpressionAttributeValues: {
-          ":empty": { L: [] },
-          ":vid": {
-            L: [
-              {
-                M: {
-                  videoId: { S: videoId },
-                  originalBucket: { S: body.bucket },
-                  originalKey: { S: body.key },
-                  originalName: { S: body.originalName || "" },
-                  contentType: { S: body.contentType || "" },
-                  size: { N: String(body.size || 0) },
-                  status: { S: "READY" }, // 简化：直接可用
-                  createdAt: { S: createdAt },
-                  updatedAt: { S: now },
-                },
-              },
-            ],
-          },
-          ":now": { S: now },
-        },
-      }),
-    );
-
-    // 2) 可选：仍然入队，供后续转码使用
-    if (queueUrl) {
-      await sqs.send(
-        new SendMessageCommand({
-          QueueUrl: queueUrl,
-          MessageBody: JSON.stringify({
-            bucket: body.bucket,
-            key: body.key,
-            userId: userId.toLowerCase(),
-            originalName: body.originalName,
-            contentType: body.contentType,
-            size: body.size,
-            uploadedAt: createdAt,
-          }),
-        }),
+    if (!contentHash) {
+      return NextResponse.json(
+        { error: "Missing content hash" },
+        { status: 400 },
       );
     }
 
+    // 写哈希锁 + 视频记录 + Profile 统计（原子事务）
+    await ddb.send(
+      new TransactWriteItemsCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: tableName,
+              Item: {
+                email: { S: normalizedUser },
+                sk: { S: `HASH#${contentHash}` },
+                videoId: { S: videoId },
+                createdAt: { S: now },
+              },
+              ConditionExpression: "attribute_not_exists(sk)",
+            },
+          },
+          {
+            Put: {
+              TableName: tableName,
+              Item: {
+                email: { S: normalizedUser },
+                sk: { S: sk },
+                videoId: { S: videoId },
+                originalBucket: { S: body.bucket },
+                originalKey: { S: body.key },
+                originalName: { S: body.originalName || "" },
+                contentType: { S: body.contentType || "" },
+                size: { N: String(sizeNumber) },
+                status: { S: "READY" },
+                contentHash: { S: contentHash },
+                createdAt: { S: createdAt },
+                updatedAt: { S: now },
+              },
+              ConditionExpression: "attribute_not_exists(sk)",
+            },
+          },
+          {
+            Update: {
+              TableName: tableName,
+              Key: {
+                email: { S: normalizedUser },
+                sk: { S: "PROFILE" },
+              },
+              UpdateExpression:
+                "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now ADD usedBytes :size, videosCount :one",
+              ExpressionAttributeValues: {
+                ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
+                ":now": { S: now },
+                ":size": { N: String(sizeNumber) },
+                ":one": { N: "1" },
+              },
+            },
+          },
+        ],
+      }),
+    );
+
     return NextResponse.json({ ok: true });
   } catch (error: any) {
+    if (error?.name === "TransactionCanceledException") {
+      return NextResponse.json(
+        { error: "Duplicate content", duplicate: true },
+        { status: 409 },
+      );
+    }
     console.error("[videos/notify] error", error);
     return NextResponse.json(
       { error: error?.message || "Failed to enqueue" },

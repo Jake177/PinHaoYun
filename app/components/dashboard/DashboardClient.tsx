@@ -22,6 +22,7 @@ type DashboardClientProps = {
 export default function DashboardClient({ userId, username }: DashboardClientProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState(""); // YYYY 或 YYYY-MM
   const [videos, setVideos] = useState<VideoItem[]>([]);
 
   const greeting = useMemo(
@@ -29,11 +30,12 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     [username],
   );
 
-  const fetchVideos = async () => {
+  const fetchVideos = async (date?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch("/api/videos/list");
+      const query = date ? `?date=${encodeURIComponent(date)}` : "";
+      const resp = await fetch(`/api/videos/list${query}`);
       if (!resp.ok) {
         const data = (await resp.json()) as { error?: string };
         throw new Error(data.error || "加载视频失败");
@@ -66,16 +68,36 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
       <section className="dashboard-panel">
         <div className="panel-heading">
-          <div className="panel-title">
-            <h2>我的视频</h2>
-            <button
-              type="button"
-              className="icon-button"
-              onClick={fetchVideos}
-              disabled={loading}
-              aria-label="刷新视频列表"
-              title="刷新"
-            >
+        <div className="panel-title">
+          <h2>我的视频</h2>
+          <input
+            type="month"
+            value={filter.length === 7 ? filter : ""}
+            onChange={(e) => setFilter(e.target.value || "")}
+            className="input"
+            aria-label="按年月筛选"
+            placeholder="按年月筛选"
+            style={{ maxWidth: 160 }}
+          />
+          <input
+            type="number"
+            min="2000"
+            max="2100"
+            placeholder="按年份筛选"
+            value={filter.length === 4 ? filter : ""}
+            onChange={(e) => setFilter(e.target.value)}
+            className="input"
+            aria-label="按年份筛选"
+            style={{ maxWidth: 120 }}
+          />
+          <button
+            type="button"
+            className="icon-button"
+            onClick={() => fetchVideos(filter)}
+            disabled={loading}
+            aria-label="刷新视频列表"
+            title="刷新"
+          >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
                   d="M20 12a8 8 0 1 1-2.34-5.66"

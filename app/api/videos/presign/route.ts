@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "node:crypto";
+import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
@@ -13,12 +14,14 @@ const originalBucket =
 const region =
   process.env.AWS_REGION ||
   "ap-southeast-2";
+const tableName = process.env.VIDEOS_TABLE;
 
 if (!originalBucket) {
   console.warn("[presign] Missing env S3_ORIGINAL_BUCKET");
 }
 
 const s3 = new S3Client({ region });
+const ddb = new DynamoDBClient({ region });
 
 const sanitizeName = (name: string) =>
   name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180);
@@ -56,8 +59,14 @@ export async function POST(request: Request) {
       fileName?: string;
       contentType?: string;
       size?: number;
+      contentHash?: string;
     };
-    const { fileName = "", contentType = "application/octet-stream", size = 0 } =
+    const {
+      fileName = "",
+      contentType = "application/octet-stream",
+      size = 0,
+      contentHash,
+    } =
       body || {};
 
     const ext = fileExt(fileName);
@@ -72,6 +81,22 @@ export async function POST(request: Request) {
         { error: "File too large (max 1GB)" },
         { status: 400 },
       );
+    }
+
+    // 快速重复校验：若已有相同哈希的视频，则直接返回 duplicate
+    if (tableName && contentHash) {
+      const existing = await ddb.send(
+        new GetItemCommand({
+          TableName: tableName,
+          Key: {
+            email: { S: userId.toLowerCase() },
+            sk: { S: `HASH#${contentHash}` },
+          },
+        }),
+      );
+      if (existing.Item) {
+        return NextResponse.json({ duplicate: true });
+      }
     }
 
     const safeName = sanitizeName(fileName || `upload.${ext || "mp4"}`);
@@ -91,6 +116,7 @@ export async function POST(request: Request) {
       uploadUrl,
       key,
       bucket: originalBucket,
+      duplicate: false,
     });
   } catch (error: any) {
     console.error("[presign] error", error);

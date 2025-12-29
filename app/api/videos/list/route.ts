@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -46,7 +46,13 @@ async function signUrl(
   }
 }
 
-export async function GET() {
+const toDate = (value?: string) => {
+  if (!value) return null;
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? null : t;
+};
+
+export async function GET(request: NextRequest) {
   try {
     if (!tableName) {
       return NextResponse.json(
@@ -70,18 +76,25 @@ export async function GET() {
     }
 
     const normalizedEmail = email.toLowerCase();
+    const searchDate = request.nextUrl.searchParams.get("date"); // YYYY / YYYY-MM / YYYY-MM-DD
 
     const res = await ddb.send(
-      new GetItemCommand({
+      new QueryCommand({
         TableName: tableName,
-        Key: { email: { S: normalizedEmail } },
+        KeyConditionExpression: "email = :email",
+        ExpressionAttributeValues: {
+          ":email": { S: normalizedEmail },
+        },
       }),
     );
 
-    const data = res.Item ? (unmarshall(res.Item) as Record<string, any>) : null;
-    const items =
-      (data?.videos as Array<Record<string, any>> | undefined)?.map((vid) => ({
-        id: vid.videoId || vid.create_time || "",
+    const records =
+      res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [];
+
+    const videos = records
+      .filter((r) => typeof r.sk === "string" && r.sk.startsWith("VIDEO#"))
+      .map((vid) => ({
+        id: vid.videoId || vid.sk || "",
         originalKey: vid.originalKey,
         originalBucket: vid.originalBucket,
         thumbnailKey: vid.thumbnailKey,
@@ -90,10 +103,23 @@ export async function GET() {
         size: vid.size,
         createdAt: vid.createdAt,
         originalName: vid.originalName,
-      })) ?? [];
+        contentHash: vid.contentHash,
+        captureTime: vid.captureTime,
+        captureLocation: vid.captureLocation,
+        captureLat: vid.captureLat,
+        captureLon: vid.captureLon,
+        captureAlt: vid.captureAlt,
+        durationSec: vid.durationSec,
+        width: vid.width,
+        height: vid.height,
+        fps: vid.fps,
+        bitrate: vid.bitrate,
+        codec: vid.codec,
+        rotation: vid.rotation,
+      }));
 
     const withUrls = await Promise.all(
-      items.map(async (item) => {
+      videos.map(async (item) => {
         const originalUrl = await signUrl(
           item.originalBucket || originalBucket,
           item.originalKey,
@@ -110,7 +136,19 @@ export async function GET() {
       }),
     );
 
-    return NextResponse.json({ videos: withUrls });
+    const sorted = withUrls.sort((a, b) => {
+      const da = toDate(a.captureTime) ?? toDate(a.createdAt) ?? 0;
+      const db = toDate(b.captureTime) ?? toDate(b.createdAt) ?? 0;
+      return db - da;
+    });
+
+    const filtered = searchDate
+      ? sorted.filter((v) =>
+          [v.captureTime, v.createdAt].some((d) => d?.startsWith(searchDate)),
+        )
+      : sorted;
+
+    return NextResponse.json({ videos: filtered });
   } catch (error: any) {
     console.error("[videos/list] error", error);
     return NextResponse.json(

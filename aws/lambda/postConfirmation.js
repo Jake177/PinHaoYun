@@ -18,13 +18,16 @@ exports.handler = async (event) => {
       TableName: tableName,
       Item: {
         email: { S: email },
+        sk: { S: "PROFILE" },
         username: { S: username },
         emailVerified: { BOOL: emailVerified },
-        videos: { L: [] },
+        quotaBytes: { N: String(256 * 1024 * 1024 * 1024) }, // 256GB
+        usedBytes: { N: "0" },
+        videosCount: { N: "0" },
         createdAt: { S: now },
         updatedAt: { S: now }
       },
-      ConditionExpression: "attribute_not_exists(email)"
+      ConditionExpression: "attribute_not_exists(email) AND attribute_not_exists(sk)"
     })
   );
   return event;
