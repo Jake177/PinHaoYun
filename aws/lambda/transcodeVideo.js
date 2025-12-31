@@ -165,13 +165,29 @@ const extractMetadata = (probe) => {
     ...(videoStream.tags || {}),
   };
 
-  const captureTime = findTag(tags, ["creation_time", "com.apple.quicktime.creationdate"]);
+  const captureTime = findTag(tags, [
+    "com.apple.quicktime.creationdate",
+    "creation_time",
+    "date",
+  ]);
   const captureLocation = findTag(tags, [
     "com.apple.quicktime.location.ISO6709",
     "location",
     "location-eng",
   ]);
   const isoLocation = parseIso6709(captureLocation);
+  const deviceMake = findTag(tags, [
+    "com.apple.quicktime.make",
+    "make",
+  ]);
+  const deviceModel = findTag(tags, [
+    "com.apple.quicktime.model",
+    "model",
+  ]);
+  const deviceSoftware = findTag(tags, [
+    "com.apple.quicktime.software",
+    "software",
+  ]);
 
   return {
     captureTime,
@@ -188,6 +204,9 @@ const extractMetadata = (probe) => {
       parseFraction(videoStream.r_frame_rate),
     codec: videoStream.codec_name,
     rotation: tags.rotate ? Number(tags.rotate) : undefined,
+    deviceMake,
+    deviceModel,
+    deviceSoftware,
   };
 };
 
@@ -230,6 +249,14 @@ exports.handler = async (event) => {
       const tmpPath = await downloadToTmp(bucket, decodedKey);
       try {
         const probe = await runFfprobe(tmpPath);
+        // Log tags for troubleshooting missing metadata (redact to avoid huge output)
+        const videoStream = (Array.isArray(probe.streams) ? probe.streams : []).find(
+          (s) => s.codec_type === "video",
+        ) || {};
+        console.log("ffprobe tags sample", {
+          formatTags: probe.format?.tags,
+          videoTags: videoStream.tags,
+        });
         const metadata = extractMetadata(probe);
         await updateVideoMetadata({
           email: userId,

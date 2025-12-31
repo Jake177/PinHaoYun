@@ -22,7 +22,8 @@ type DashboardClientProps = {
 export default function DashboardClient({ userId, username }: DashboardClientProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState(""); // YYYY 或 YYYY-MM
+  const [filterYear, setFilterYear] = useState("");
+  const [filterMonth, setFilterMonth] = useState(""); // 01-12
   const [videos, setVideos] = useState<VideoItem[]>([]);
 
   const greeting = useMemo(
@@ -53,6 +54,29 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     fetchVideos();
   }, []);
 
+  useEffect(() => {
+    const date =
+      filterYear && filterMonth
+        ? `${filterYear}-${filterMonth}`
+        : filterYear
+          ? filterYear
+          : undefined;
+    fetchVideos(date);
+  }, [filterYear, filterMonth]);
+
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    videos.forEach((v) => {
+      const d = v.captureTime || v.createdAt;
+      if (!d) return;
+      const t = Date.parse(d);
+      if (!Number.isNaN(t)) {
+        years.add(String(new Date(t).getFullYear()));
+      }
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [videos]);
+
   return (
     <div className="dashboard-layout">
       <header className="dashboard-header">
@@ -70,30 +94,52 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         <div className="panel-heading">
         <div className="panel-title">
           <h2>我的视频</h2>
-          <input
-            type="month"
-            value={filter.length === 7 ? filter : ""}
-            onChange={(e) => setFilter(e.target.value || "")}
+          <select
             className="input"
-            aria-label="按年月筛选"
-            placeholder="按年月筛选"
-            style={{ maxWidth: 160 }}
-          />
-          <input
-            type="number"
-            min="2000"
-            max="2100"
-            placeholder="按年份筛选"
-            value={filter.length === 4 ? filter : ""}
-            onChange={(e) => setFilter(e.target.value)}
-            className="input"
+            style={{ maxWidth: 140 }}
+            value={filterYear}
+            onChange={(e) => {
+              setFilterYear(e.target.value);
+              setFilterMonth("");
+            }}
             aria-label="按年份筛选"
-            style={{ maxWidth: 120 }}
-          />
+          >
+            <option value="">全部年份</option>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}年
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            style={{ maxWidth: 140 }}
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            aria-label="按月份筛选"
+            disabled={!filterYear}
+          >
+            <option value="">全部月份</option>
+            {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map(
+              (m) => (
+                <option key={m} value={m}>
+                  {Number(m)}月
+                </option>
+              ),
+            )}
+          </select>
           <button
             type="button"
             className="icon-button"
-            onClick={() => fetchVideos(filter)}
+            onClick={() =>
+              fetchVideos(
+                filterYear
+                  ? filterMonth
+                    ? `${filterYear}-${filterMonth}`
+                    : filterYear
+                  : undefined,
+              )
+            }
             disabled={loading}
             aria-label="刷新视频列表"
             title="刷新"

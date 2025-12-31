@@ -23,13 +23,17 @@ export default function VerifyForm({
 }: VerifyFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState(defaultEmail);
-  const [code, setCode] = useState("");
+  const [otp, setOtp] = useState<string[]>(Array(6).fill(""));
   const [errors, setErrors] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string | null>(
     initialFeedback || null,
   );
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const inputs = useMemo(
+    () => Array.from({ length: 6 }, () => ({ current: null as HTMLInputElement | null })),
+    [],
+  );
 
   useEffect(() => {
     setEmail(defaultEmail);
@@ -44,12 +48,34 @@ export default function VerifyForm({
     [email],
   );
 
+  const codeValue = useMemo(() => otp.join(""), [otp]);
+
+  const updateOtp = (index: number, value: string) => {
+    setOtp((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const focusNext = (index: number) => {
+    if (index < inputs.length - 1) {
+      inputs[index + 1].current?.focus();
+    }
+  };
+
+  const focusPrev = (index: number) => {
+    if (index > 0) {
+      inputs[index - 1].current?.focus();
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrors([]);
     setFeedback(null);
 
-    if (!normalizedEmail || !code.trim()) {
+    if (!normalizedEmail || codeValue.length !== 6) {
       setErrors(["请填写邮箱和验证码。"]);
       return;
     }
@@ -63,7 +89,7 @@ export default function VerifyForm({
       const resp = await fetch("/api/auth/confirm-sign-up", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail, code: code.trim() }),
+        body: JSON.stringify({ email: normalizedEmail, code: codeValue }),
       });
 
       if (!resp.ok) {
@@ -139,32 +165,52 @@ export default function VerifyForm({
             id="email"
             name="email"
             type="email"
-            placeholder="注册时使用的邮箱"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-          />
-        </div>
+          placeholder="注册时使用的邮箱"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          required
+        />
+      </div>
 
-        <div className="field-group">
-          <label htmlFor="code">邮箱验证码</label>
-          <input
-            id="code"
-            name="code"
-            type="text"
-            inputMode="numeric"
-            placeholder="请输入验证码"
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-            required
-          />
-          <button
-            type="button"
-            className="link-button"
-            onClick={handleResend}
-            disabled={resending}
-          >
+      <div className="field-group">
+        <label htmlFor="code">邮箱验证码</label>
+        <div className="otp-grid" aria-label="6位验证码输入">
+          {otp.map((digit, idx) => (
+            <input
+              key={idx}
+              ref={(el) => (inputs[idx].current = el)}
+              type="text"
+              inputMode="numeric"
+              maxLength={1}
+              className="otp-box"
+              value={digit}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(-1);
+                updateOtp(idx, val);
+                if (val) focusNext(idx);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Backspace" && !otp[idx]) {
+                  updateOtp(idx, "");
+                  focusPrev(idx);
+                } else if (e.key === "ArrowLeft") {
+                  focusPrev(idx);
+                } else if (e.key === "ArrowRight") {
+                  focusNext(idx);
+                }
+              }}
+              required
+              aria-label={`验证码第 ${idx + 1} 位`}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          className="link-button"
+          onClick={handleResend}
+          disabled={resending}
+        >
             {resending ? "发送中..." : "重新发送验证码"}
           </button>
         </div>
