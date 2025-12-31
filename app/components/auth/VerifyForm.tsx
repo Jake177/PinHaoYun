@@ -179,7 +179,9 @@ export default function VerifyForm({
           {otp.map((digit, idx) => (
             <input
               key={idx}
-              ref={(el) => (inputs[idx].current = el)}
+              ref={(el) => {
+                inputs[idx].current = el;
+              }}
               type="text"
               inputMode="numeric"
               maxLength={1}

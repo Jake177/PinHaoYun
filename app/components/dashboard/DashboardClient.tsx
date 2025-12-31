@@ -11,6 +11,7 @@ type VideoItem = {
   originalUrl?: string | null;
   status?: string;
   createdAt?: string;
+  captureTime?: string;
   size?: number;
 };
 
