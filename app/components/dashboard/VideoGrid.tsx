@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type VideoItem = {
   id: string;
@@ -22,6 +22,9 @@ type VideoItem = {
 type VideoGridProps = {
   videos: VideoItem[];
   onRefresh?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 };
 
 const formatSize = (value?: number) => {
@@ -40,8 +43,42 @@ const formatDate = (value?: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 };
 
-export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
+export default function VideoGrid({
+  videos,
+  onRefresh,
+  hasMore,
+  loadingMore,
+  onLoadMore,
+}: VideoGridProps) {
   const [preview, setPreview] = useState<VideoItem | null>(null);
+  const [showMeta, setShowMeta] = useState(false);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return;
+
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !loadingMore) {
+          onLoadMore();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, onLoadMore]);
+
+  useEffect(() => {
+    // 每次切换预览，重置属性折叠状态
+    setShowMeta(false);
+  }, [previewKey]);
 
   const groups = useMemo(() => {
     const buckets: Record<string, VideoItem[]> = {};
@@ -69,6 +106,13 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
     return `${y}年${Number(m)}月`;
   };
 
+  // 重置属性开关
+  const handleClose = () => {
+    setPreview(null);
+    setShowMeta(false);
+    setPreviewKey(null);
+  };
+
   return (
     <>
       {videos.length === 0 ? (
@@ -91,10 +135,16 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
                             src={previewUrl}
                             muted
                             preload="metadata"
-                            onClick={() => setPreview(video)}
-                            onKeyDown={(e) =>
-                              e.key === "Enter" && setPreview(video)
-                            }
+                            onClick={() => {
+                              setPreview(video);
+                              setPreviewKey(video.originalUrl || video.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                setPreview(video);
+                                setPreviewKey(video.originalUrl || video.id);
+                              }
+                            }}
                             role="button"
                             tabIndex={0}
                             playsInline
@@ -114,38 +164,83 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
         ))
       )}
 
+      {/* Infinite scroll sentinel */}
+      {videos.length > 0 && (
+        <div ref={sentinelRef} className="load-more-sentinel">
+          {loadingMore ? (
+            <span className="pill">加载更多...</span>
+          ) : hasMore ? (
+            <button
+              type="button"
+              className="pill"
+              onClick={onLoadMore}
+            >
+              加载更多
+            </button>
+          ) : null}
+        </div>
+      )}
+
       {preview ? (
-        <div className="modal" role="dialog" aria-modal="true">
-          <div className="modal__body">
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          onClick={handleClose}
+        >
+          <div
+            className="modal__body"
+            onClick={(e) => e.stopPropagation()}
+          >
             <header className="modal__header">
               <div>
                 <p className="muted">预览</p>
-                <h3 className="ellipsis">
-                  {preview.originalName || preview.id}
-                </h3>
               </div>
               <button
                 type="button"
                 className="pill"
-                onClick={() => setPreview(null)}
+                onClick={handleClose}
               >
                 关闭
               </button>
             </header>
-            {preview.thumbnailUrl || preview.originalUrl ? (
+            {preview.originalUrl ? (
               <video
-                src={preview.thumbnailUrl || preview.originalUrl || ""}
+                key={previewKey || preview.id}
+                src={preview.originalUrl}
                 controls
                 playsInline
                 preload="metadata"
-                poster={preview.thumbnailUrl || preview.originalUrl || undefined}
+                poster={preview.thumbnailUrl || undefined}
                 style={{ width: "100%", maxHeight: "60vh" }}
-              />
+                />
             ) : (
               <div className="empty-state">暂无预览</div>
             )}
-            <div className="metadata-panel">
-              <h4>属性</h4>
+            <div className="metadata-toggle">
+              <button
+                type="button"
+                className="pill"
+                onClick={() => setShowMeta((v) => !v)}
+              >
+                {showMeta ? "收起属性" : "查看属性"}
+              </button>
+              {preview.originalUrl ? (
+                <a
+                  className="pill pill--primary"
+                  href={preview.originalUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ marginLeft: "0.5rem" }}
+                >
+                  下载原视频
+                </a>
+              ) : null}
+            </div>
+            <div
+              className={`metadata-panel ${showMeta ? "metadata-panel--open" : ""}`}
+              aria-expanded={showMeta}
+            >
               <ul>
                 <li>拍摄时间：{formatDate(preview.captureTime || preview.createdAt) || "未知"}</li>
                 <li>文件大小：{formatSize(preview.size)}</li>
@@ -166,16 +261,6 @@ export default function VideoGrid({ videos, onRefresh }: VideoGridProps) {
                       : "未知")}
                 </li>
               </ul>
-              {preview.originalUrl ? (
-                <a
-                  className="pill pill--primary"
-                  href={preview.originalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  下载原视频
-                </a>
-              ) : null}
             </div>
           </div>
         </div>

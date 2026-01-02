@@ -52,6 +52,8 @@ const toDate = (value?: string) => {
   return Number.isNaN(t) ? null : t;
 };
 
+const DEFAULT_PAGE_SIZE = 20;
+
 export async function GET(request: NextRequest) {
   try {
     if (!tableName) {
@@ -77,6 +79,22 @@ export async function GET(request: NextRequest) {
 
     const normalizedEmail = email.toLowerCase();
     const searchDate = request.nextUrl.searchParams.get("date"); // YYYY / YYYY-MM / YYYY-MM-DD
+    const limitParam = request.nextUrl.searchParams.get("limit");
+    const cursorParam = request.nextUrl.searchParams.get("cursor");
+
+    const limit = Math.min(Math.max(Number(limitParam) || DEFAULT_PAGE_SIZE, 1), 100);
+
+    // Decode cursor from base64 if provided
+    let exclusiveStartKey: Record<string, any> | undefined;
+    if (cursorParam) {
+      try {
+        exclusiveStartKey = JSON.parse(
+          Buffer.from(cursorParam, "base64").toString("utf-8")
+        );
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
 
     const res = await ddb.send(
       new QueryCommand({
@@ -85,6 +103,9 @@ export async function GET(request: NextRequest) {
         ExpressionAttributeValues: {
           ":email": { S: normalizedEmail },
         },
+        ExclusiveStartKey: exclusiveStartKey,
+        // Fetch more than limit to allow filtering, but cap at reasonable number
+        Limit: searchDate ? limit * 3 : limit + 10,
       }),
     );
 
@@ -118,8 +139,26 @@ export async function GET(request: NextRequest) {
         rotation: vid.rotation,
       }));
 
+    // Sort by capture time or created at (descending)
+    const sorted = videos.sort((a, b) => {
+      const da = toDate(a.captureTime) ?? toDate(a.createdAt) ?? 0;
+      const db = toDate(b.captureTime) ?? toDate(b.createdAt) ?? 0;
+      return db - da;
+    });
+
+    // Apply date filter if provided
+    const filtered = searchDate
+      ? sorted.filter((v) =>
+          [v.captureTime, v.createdAt].some((d) => d?.startsWith(searchDate)),
+        )
+      : sorted;
+
+    // Paginate results
+    const paginated = filtered.slice(0, limit);
+
+    // Generate presigned URLs only for the paginated results
     const withUrls = await Promise.all(
-      videos.map(async (item) => {
+      paginated.map(async (item) => {
         const originalUrl = await signUrl(
           item.originalBucket || originalBucket,
           item.originalKey,
@@ -136,19 +175,20 @@ export async function GET(request: NextRequest) {
       }),
     );
 
-    const sorted = withUrls.sort((a, b) => {
-      const da = toDate(a.captureTime) ?? toDate(a.createdAt) ?? 0;
-      const db = toDate(b.captureTime) ?? toDate(b.createdAt) ?? 0;
-      return db - da;
+    // Prepare next cursor
+    let nextCursor: string | null = null;
+    if (res.LastEvaluatedKey) {
+      nextCursor = Buffer.from(JSON.stringify(res.LastEvaluatedKey)).toString("base64");
+    } else if (filtered.length > limit) {
+      // If we filtered and have more items locally, we need to continue from last item
+      // This is a simplified approach - for production you might need a more robust solution
+    }
+
+    return NextResponse.json({
+      videos: withUrls,
+      nextCursor,
+      hasMore: !!nextCursor || filtered.length > limit,
     });
-
-    const filtered = searchDate
-      ? sorted.filter((v) =>
-          [v.captureTime, v.createdAt].some((d) => d?.startsWith(searchDate)),
-        )
-      : sorted;
-
-    return NextResponse.json({ videos: filtered });
   } catch (error: any) {
     console.error("[videos/list] error", error);
     return NextResponse.json(

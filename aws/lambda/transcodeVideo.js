@@ -2,9 +2,9 @@
 // S3-triggered Lambda: extract video metadata with ffprobe and update DynamoDB.
 // Requires ffprobe in a Lambda layer (default path: /opt/bin/ffprobe).
 
-const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
-const { createWriteStream } = require("node:fs");
+const { createWriteStream, createReadStream } = require("node:fs");
 const { unlink } = require("node:fs/promises");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -19,6 +19,8 @@ const ddb = new DynamoDBClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
 const FFPROBE_PATH = process.env.FFPROBE_PATH || "/opt/bin/ffprobe";
+const FFMPEG_PATH = process.env.FFMPEG_PATH || "/opt/bin/ffmpeg";
+const THUMBNAIL_BUCKET = process.env.S3_THUMBNAIL_BUCKET;
 
 const parseFraction = (value) => {
   if (!value || value === "0/0") return undefined;
@@ -77,6 +79,42 @@ const runFfprobe = async (filePath) => {
   return JSON.parse(stdout);
 };
 
+const makeThumbnail = async ({ bucket, key, userId, videoId, filePath }) => {
+  if (!THUMBNAIL_BUCKET) return null;
+  const thumbName = `${videoId || "thumb"}.jpg`;
+  const targetKey = `video/${encodeURIComponent(userId)}/${thumbName}`;
+  const tmpThumb = path.join(
+    os.tmpdir(),
+    `${Date.now()}-${Math.random().toString(36).slice(2)}-${thumbName}`,
+  );
+  try {
+    await execFileAsync(FFMPEG_PATH, [
+      "-y",
+      "-i",
+      filePath,
+      "-ss",
+      "1",
+      "-vframes",
+      "1",
+      "-vf",
+      "scale=640:-1",
+      tmpThumb,
+    ]);
+    const body = createReadStream(tmpThumb);
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: THUMBNAIL_BUCKET,
+        Key: targetKey,
+        Body: body,
+        ContentType: "image/jpeg",
+      }),
+    );
+    return { bucket: THUMBNAIL_BUCKET, key: targetKey };
+  } finally {
+    await unlink(tmpThumb).catch(() => {});
+  }
+};
+
 const toAttrNumber = (value) => ({ N: String(value) });
 const toAttrString = (value) => ({ S: String(value) });
 
@@ -85,6 +123,8 @@ const updateVideoMetadata = async ({
   videoId,
   originalBucket,
   originalKey,
+  thumbnailBucket,
+  thumbnailKey,
   metadata,
 }) => {
   const now = new Date().toISOString();
@@ -107,6 +147,8 @@ const updateVideoMetadata = async ({
   if (originalBucket) addField("originalBucket", toAttrString(originalBucket));
   if (originalKey) addField("originalKey", toAttrString(originalKey));
   addField("status", toAttrString("READY"));
+  if (thumbnailBucket) addField("thumbnailBucket", toAttrString(thumbnailBucket));
+  if (thumbnailKey) addField("thumbnailKey", toAttrString(thumbnailKey));
 
   if (metadata.captureTime) {
     addField("captureTime", toAttrString(metadata.captureTime));
@@ -144,6 +186,9 @@ const updateVideoMetadata = async ({
   if (metadata.rotation !== undefined) {
     addField("rotation", toAttrNumber(metadata.rotation));
   }
+  if (metadata.deviceMake) addField("deviceMake", toAttrString(metadata.deviceMake));
+  if (metadata.deviceModel) addField("deviceModel", toAttrString(metadata.deviceModel));
+  if (metadata.deviceSoftware) addField("deviceSoftware", toAttrString(metadata.deviceSoftware));
 
   await ddb.send(
     new UpdateItemCommand({
@@ -258,11 +303,25 @@ exports.handler = async (event) => {
           videoTags: videoStream.tags,
         });
         const metadata = extractMetadata(probe);
+        let thumbResult = null;
+        try {
+          thumbResult = await makeThumbnail({
+            bucket,
+            key: decodedKey,
+            userId,
+            videoId,
+            filePath: tmpPath,
+          });
+        } catch (thumbErr) {
+          console.warn("thumbnail generation failed", thumbErr);
+        }
         await updateVideoMetadata({
           email: userId,
           videoId,
           originalBucket: bucket,
           originalKey: decodedKey,
+          thumbnailBucket: thumbResult?.bucket,
+          thumbnailKey: thumbResult?.key,
           metadata,
         });
       } finally {

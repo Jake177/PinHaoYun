@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VideoUploader from "./VideoUploader";
 import VideoGrid from "./VideoGrid";
 
@@ -20,49 +20,87 @@ type DashboardClientProps = {
   username: string;
 };
 
+const PAGE_SIZE = 20;
+
 export default function DashboardClient({ userId, username }: DashboardClientProps) {
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterYear, setFilterYear] = useState("");
   const [filterMonth, setFilterMonth] = useState(""); // 01-12
   const [videos, setVideos] = useState<VideoItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
 
   const greeting = useMemo(
     () => (username ? `欢迎，${username}` : "欢迎回来"),
     [username],
   );
 
-  const fetchVideos = async (date?: string) => {
-    setLoading(true);
+  const buildDateQuery = useCallback(() => {
+    if (filterYear && filterMonth) return `${filterYear}-${filterMonth}`;
+    if (filterYear) return filterYear;
+    return undefined;
+  }, [filterYear, filterMonth]);
+
+  const fetchVideos = useCallback(async (reset = true) => {
+    if (reset) {
+      setLoading(true);
+      setNextCursor(null);
+    } else {
+      setLoadingMore(true);
+    }
     setError(null);
+
     try {
-      const query = date ? `?date=${encodeURIComponent(date)}` : "";
-      const resp = await fetch(`/api/videos/list${query}`);
+      const params = new URLSearchParams();
+      params.set("limit", String(PAGE_SIZE));
+
+      const date = buildDateQuery();
+      if (date) params.set("date", date);
+      if (!reset && nextCursor) params.set("cursor", nextCursor);
+
+      const resp = await fetch(`/api/videos/list?${params.toString()}`);
       if (!resp.ok) {
         const data = (await resp.json()) as { error?: string };
         throw new Error(data.error || "加载视频失败");
       }
-      const data = (await resp.json()) as { videos?: VideoItem[] };
-      setVideos(data.videos || []);
+
+      const data = (await resp.json()) as {
+        videos?: VideoItem[];
+        nextCursor?: string | null;
+        hasMore?: boolean;
+      };
+
+      if (reset) {
+        setVideos(data.videos || []);
+      } else {
+        setVideos((prev) => [...prev, ...(data.videos || [])]);
+      }
+      setNextCursor(data.nextCursor || null);
+      setHasMore(data.hasMore ?? false);
     } catch (err: any) {
       setError(err?.message || "加载视频失败");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [buildDateQuery, nextCursor]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchVideos(false);
+    }
+  }, [fetchVideos, loadingMore, hasMore]);
 
   useEffect(() => {
-    fetchVideos();
+    fetchVideos(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const date =
-      filterYear && filterMonth
-        ? `${filterYear}-${filterMonth}`
-        : filterYear
-          ? filterYear
-          : undefined;
-    fetchVideos(date);
+    fetchVideos(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterYear, filterMonth]);
 
   const yearOptions = useMemo(() => {
@@ -132,15 +170,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           <button
             type="button"
             className="icon-button"
-            onClick={() =>
-              fetchVideos(
-                filterYear
-                  ? filterMonth
-                    ? `${filterYear}-${filterMonth}`
-                    : filterYear
-                  : undefined,
-              )
-            }
+            onClick={() => fetchVideos(true)}
             disabled={loading}
             aria-label="刷新视频列表"
             title="刷新"
@@ -166,10 +196,17 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           </div>
           <div className="panel-status">
             {loading ? <span className="pill">加载中...</span> : null}
+            {loadingMore ? <span className="pill">加载更多...</span> : null}
             {error ? <span className="pill pill--error">{error}</span> : null}
           </div>
         </div>
-        <VideoGrid videos={videos} onRefresh={fetchVideos} />
+        <VideoGrid
+          videos={videos}
+          onRefresh={() => fetchVideos(true)}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
+        />
       </section>
     </div>
   );
