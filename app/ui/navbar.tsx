@@ -4,9 +4,10 @@ import NavbarLogout from "./navbar-logout";
 
 type NavbarProps = {
   isAuthenticated: boolean;
+  username?: string;
 };
 
-export default function Navbar({ isAuthenticated }: NavbarProps) {
+export default function Navbar({ isAuthenticated, username }: NavbarProps) {
   const href = isAuthenticated ? "/dashboard" : "/login";
   const ariaLabel = isAuthenticated ? "返回 PinHaoYun 控制台" : "返回登录页面";
 
@@ -19,7 +20,7 @@ export default function Navbar({ isAuthenticated }: NavbarProps) {
       >
         <Logo />
       </Link>
-      <NavbarLogout isAuthenticated={isAuthenticated} />
+      <NavbarLogout isAuthenticated={isAuthenticated} username={username} />
     </header>
   );
 }

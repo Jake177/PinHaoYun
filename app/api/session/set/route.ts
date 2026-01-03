@@ -3,7 +3,10 @@ import { verifyIdToken } from "@/app/lib/jwt";
 
 export async function POST(request: Request) {
   try {
-    const { idToken } = (await request.json()) as { idToken?: string };
+    const { idToken, accessToken } = (await request.json()) as {
+      idToken?: string;
+      accessToken?: string;
+    };
     if (!idToken) {
       return NextResponse.json({ error: "Missing idToken" }, { status: 400 });
     }
@@ -20,6 +23,17 @@ export async function POST(request: Request) {
       path: "/",
       expires: exp ? new Date(exp * 1000) : undefined,
     });
+
+    // Also store access token for Cognito API calls
+    if (accessToken) {
+      res.cookies.set("access_token", accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        expires: exp ? new Date(exp * 1000) : undefined,
+      });
+    }
 
     return res;
   } catch (err) {

@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     }
 
     const idToken = result.AuthenticationResult?.IdToken;
+    const accessToken = result.AuthenticationResult?.AccessToken;
     const expiresIn = result.AuthenticationResult?.ExpiresIn ?? 3600; // seconds
     if (!idToken) {
       return NextResponse.json({ error: "Auth failed" }, { status: 401 });
@@ -64,6 +65,18 @@ export async function POST(req: Request) {
       path: "/",
       maxAge: expiresIn,
     });
+
+    // Also store access token for Cognito API calls (profile updates)
+    if (accessToken) {
+      res.cookies.set("access_token", accessToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: expiresIn,
+      });
+    }
+
     return res;
   } catch (err: any) {
     const msg = err?.name === "UserNotConfirmedException"
