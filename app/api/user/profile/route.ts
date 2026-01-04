@@ -60,32 +60,23 @@ export async function GET() {
 
     // Get DynamoDB profile for stats
     let dbProfile: Record<string, unknown> = {};
-    console.log("[profile] Config - usersTable:", usersTable, "region:", region, "email:", email);
     if (usersTable) {
       try {
-        const queryKey = {
-          email: { S: email },
-          sk: { S: "PROFILE" },
-        };
-        console.log("[profile] DynamoDB query key:", JSON.stringify(queryKey));
         const result = await ddb.send(
           new GetItemCommand({
             TableName: usersTable,
-            Key: queryKey,
+            Key: {
+              email: { S: email },
+              sk: { S: "PROFILE" },
+            },
           })
         );
-        console.log("[profile] DynamoDB result.Item:", result.Item ? JSON.stringify(result.Item) : "null");
         if (result.Item) {
           dbProfile = unmarshall(result.Item);
-          console.log("[profile] Unmarshalled dbProfile:", JSON.stringify(dbProfile));
-        } else {
-          console.log("[profile] No PROFILE record found for email:", email);
         }
-      } catch (err: any) {
-        console.error("[profile] DynamoDB error:", err?.name, err?.message);
+      } catch (err) {
+        console.warn("[profile] Failed to get DynamoDB profile:", err);
       }
-    } else {
-      console.warn("[profile] usersTable is not defined!");
     }
 
     return NextResponse.json({
