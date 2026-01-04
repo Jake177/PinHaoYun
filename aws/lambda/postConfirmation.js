@@ -3,8 +3,8 @@ const { DynamoDBClient, PutItemCommand } = require("@aws-sdk/client-dynamodb");
 const client = new DynamoDBClient({});
 
 exports.handler = async (event) => {
-  const tableName = process.env.USERS_TABLE;
-  if (!tableName) throw new Error("Missing env USERS_TABLE");
+  const tableName = process.env.VIDEOS_TABLE || process.env.USERS_TABLE;
+  if (!tableName) throw new Error("Missing env VIDEOS_TABLE/USERS_TABLE");
   const attributes = event.request?.userAttributes || {};
   const username = event.userName;
   const email = attributes.email?.toLowerCase();
