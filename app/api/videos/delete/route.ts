@@ -15,8 +15,12 @@ const sqs = new SQSClient({ region });
 export async function POST(request: Request) {
   try {
     if (!tableName || !queueUrl) {
+      const missing: string[] = [];
+      if (!tableName) missing.push("VIDEOS_TABLE");
+      if (!queueUrl) missing.push("VIDEOS_DELETE_QUEUE_URL");
+      console.error("[videos/delete] Missing env", { missing });
       return NextResponse.json(
-        { error: "Missing delete queue configuration" },
+        { error: `Missing delete queue configuration: ${missing.join(", ")}` },
         { status: 500 },
       );
     }
