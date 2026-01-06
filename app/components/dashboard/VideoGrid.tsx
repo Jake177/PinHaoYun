@@ -21,6 +21,14 @@ type VideoItem = {
   deviceMake?: string;
   deviceModel?: string;
   deviceSoftware?: string;
+  durationSec?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  bitrate?: number;
+  codec?: string;
+  rotation?: number;
+  captureAlt?: number;
   size?: number;
 };
 
@@ -60,6 +68,25 @@ const formatDate = (value?: string) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 };
 
+const formatDuration = (value?: number) => {
+  if (!value || Number.isNaN(value)) return "";
+  const total = Math.max(0, Math.floor(value));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+};
+
+const formatFps = (value?: number) => {
+  if (!value || Number.isNaN(value)) return "";
+  return `${value.toFixed(2)} fps`;
+};
+
+const formatBitrate = (value?: number) => {
+  if (!value || Number.isNaN(value)) return "";
+  const mbps = value / 1_000_000;
+  return `${mbps.toFixed(2)} Mbps`;
+};
+
 export default function VideoGrid({
   videos,
   onRefresh,
@@ -72,6 +99,8 @@ export default function VideoGrid({
   const [preview, setPreview] = useState<VideoItem | null>(null);
   const [showMeta, setShowMeta] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [sheetTranslate, setSheetTranslate] = useState(100);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLocationEditor, setShowLocationEditor] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -79,6 +108,20 @@ export default function VideoGrid({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationSaving, setLocationSaving] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({
+    startY: 0,
+    startTranslate: 100,
+    height: 1,
+    currentTranslate: 100,
+    moved: false,
+  });
+
+  const SHEET_TRANSLATE = {
+    full: 0,
+    half: 45,
+    closed: 100,
+  };
 
   // Infinite scroll observer
   useEffect(() => {
@@ -107,7 +150,109 @@ export default function VideoGrid({
     setShowLocationEditor(false);
     setDeleteError(null);
     setLocationError(null);
+    setSheetTranslate(SHEET_TRANSLATE.closed);
+    dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
   }, [previewKey]);
+
+  const setTranslate = (value: number) => {
+    dragRef.current.currentTranslate = value;
+    setSheetTranslate(value);
+  };
+
+  const openSheet = () => {
+    setShowMeta(true);
+    setTranslate(SHEET_TRANSLATE.half);
+  };
+
+  const closeSheet = () => {
+    setTranslate(SHEET_TRANSLATE.closed);
+    setShowMeta(false);
+  };
+
+  const toggleSheet = () => {
+    if (showMeta) {
+      closeSheet();
+    } else {
+      openSheet();
+    }
+  };
+
+  const snapSheet = (translate: number) => {
+    if (translate > 70) {
+      closeSheet();
+      return;
+    }
+    setShowMeta(true);
+    if (translate < 20) {
+      setTranslate(SHEET_TRANSLATE.full);
+    } else {
+      setTranslate(SHEET_TRANSLATE.half);
+    }
+  };
+
+  const handleSheetPointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!showMeta) return;
+    const sheet = sheetRef.current;
+    if (!sheet) return;
+    dragRef.current.startY = event.clientY;
+    dragRef.current.startTranslate = sheetTranslate;
+    dragRef.current.currentTranslate = sheetTranslate;
+    dragRef.current.height = sheet.getBoundingClientRect().height || 1;
+    dragRef.current.moved = false;
+    setIsSheetDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleSheetPointerMove = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!isSheetDragging) return;
+    const delta = event.clientY - dragRef.current.startY;
+    if (Math.abs(delta) > 4) {
+      dragRef.current.moved = true;
+    }
+    const next =
+      dragRef.current.startTranslate +
+      (delta / dragRef.current.height) * 100;
+    const clamped = Math.min(
+      SHEET_TRANSLATE.closed,
+      Math.max(SHEET_TRANSLATE.full, next),
+    );
+    setTranslate(clamped);
+  };
+
+  const handleSheetPointerUp = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!isSheetDragging) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setIsSheetDragging(false);
+    snapSheet(dragRef.current.currentTranslate);
+  };
+
+  const handleSheetPointerCancel = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    if (!isSheetDragging) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    setIsSheetDragging(false);
+    snapSheet(dragRef.current.currentTranslate);
+  };
+
+  const handleSheetToggle = () => {
+    if (!showMeta) return;
+    if (dragRef.current.moved) {
+      dragRef.current.moved = false;
+      return;
+    }
+    if (sheetTranslate <= 10) {
+      setTranslate(SHEET_TRANSLATE.half);
+    } else {
+      setTranslate(SHEET_TRANSLATE.full);
+    }
+  };
 
   const groups = useMemo(() => {
     const buckets: Record<string, VideoItem[]> = {};
@@ -315,41 +460,47 @@ export default function VideoGrid({
             ) : (
               <div className="empty-state">暂无预览</div>
             )}
-            <div className="metadata-toggle">
+            <div className="metadata-toggle preview-actions">
               <button
                 type="button"
-                className="pill"
-                onClick={() => setShowMeta((v) => !v)}
+                className="pill pill--icon"
+                onClick={toggleSheet}
+                aria-label={showMeta ? "收起属性" : "查看属性"}
+                aria-pressed={showMeta}
+                title={showMeta ? "收起属性" : "查看属性"}
               >
-                {showMeta ? "收起属性" : "查看属性"}
+                <span className="material-symbols-outlined">info</span>
               </button>
               <button
                 type="button"
-                className="pill"
+                className="pill pill--icon"
                 onClick={handleEditLocation}
                 disabled={!onUpdateLocation}
-                style={{ marginLeft: "0.5rem" }}
+                aria-label="编辑位置"
+                title="编辑位置"
               >
-                编辑位置
+                <span className="material-symbols-outlined">map_search</span>
               </button>
               <button
                 type="button"
-                className="pill pill--error"
+                className="pill pill--error pill--icon"
                 onClick={handleDeleteClick}
                 disabled={deleting || !onDelete}
-                style={{ marginLeft: "0.5rem" }}
+                aria-label={deleting ? "删除中..." : "删除"}
+                title={deleting ? "删除中..." : "删除"}
               >
-                {deleting ? "删除中..." : "删除视频"}
+                <span className="material-symbols-outlined">delete</span>
               </button>
               {preview.originalUrl ? (
                 <a
-                  className="pill pill--primary"
+                  className="pill pill--primary pill--icon"
                   href={preview.originalUrl}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ marginLeft: "0.5rem" }}
+                  aria-label="下载"
+                  title="下载"
                 >
-                  下载原视频
+                  <span className="material-symbols-outlined">download</span>
                 </a>
               ) : null}
             </div>
@@ -359,12 +510,45 @@ export default function VideoGrid({
               </p>
             ) : null}
             <div
-              className={`metadata-panel ${showMeta ? "metadata-panel--open" : ""}`}
+              ref={sheetRef}
+              className={`metadata-panel ${showMeta ? "metadata-panel--open" : ""} ${
+                isSheetDragging ? "metadata-panel--dragging" : ""
+              }`}
               aria-expanded={showMeta}
+              style={
+                {
+                  "--sheet-translate": `${sheetTranslate}%`,
+                } as React.CSSProperties
+              }
             >
+              <div className="metadata-sheet__header">
+                <button
+                  type="button"
+                  className="metadata-sheet__handle"
+                  onClick={handleSheetToggle}
+                  onPointerDown={handleSheetPointerDown}
+                  onPointerMove={handleSheetPointerMove}
+                  onPointerUp={handleSheetPointerUp}
+                  onPointerCancel={handleSheetPointerCancel}
+                  aria-label="切换属性高度"
+                >
+                  <span />
+                </button>
+                <span className="metadata-sheet__title">属性</span>
+              </div>
               <ul>
                 <li>拍摄时间：{formatDate(preview.captureTime || preview.createdAt) || "未知"}</li>
                 <li>文件大小：{formatSize(preview.size)}</li>
+                <li>时长：{formatDuration(preview.durationSec) || "未知"}</li>
+                <li>
+                  分辨率：
+                  {preview.width && preview.height
+                    ? `${preview.width} × ${preview.height}`
+                    : "未知"}
+                </li>
+                <li>帧率：{formatFps(preview.fps) || "未知"}</li>
+                <li>编码：{preview.codec || "未知"}</li>
+                <li>码率：{formatBitrate(preview.bitrate) || "未知"}</li>
                 <li>
                   设备：
                   {preview.deviceMake || preview.deviceModel

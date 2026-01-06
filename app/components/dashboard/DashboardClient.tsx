@@ -18,6 +18,14 @@ type VideoItem = {
   captureCity?: string;
   captureRegion?: string;
   captureCountry?: string;
+  durationSec?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  bitrate?: number;
+  codec?: string;
+  rotation?: number;
+  captureAlt?: number;
 };
 
 type DashboardClientProps = {
