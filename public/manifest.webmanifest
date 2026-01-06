@@ -1,0 +1,24 @@
+{
+  "name": "Pin Hao Yun",
+  "short_name": "PinHaoYun",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "1024x1536",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

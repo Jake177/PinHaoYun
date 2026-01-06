@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import "./ui/globals.css";
@@ -9,6 +9,22 @@ import { decodeIdToken } from "./lib/jwt";
 export const metadata: Metadata = {
   title: "Pin Hao Yun",
   description: "App Router bootstrap for Pin Hao Yun.",
+  applicationName: "Pin Hao Yun",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/logo.svg",
+    shortcut: "/logo.svg",
+    apple: "/logo.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Pin Hao Yun",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
 };
 
 export const dynamic = "force-dynamic";

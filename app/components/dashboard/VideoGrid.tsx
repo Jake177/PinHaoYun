@@ -310,8 +310,8 @@ export default function VideoGrid({
                 playsInline
                 preload="metadata"
                 poster={preview.thumbnailUrl || undefined}
-                style={{ width: "100%", maxHeight: "60vh" }}
-                />
+                className="preview-video"
+              />
             ) : (
               <div className="empty-state">暂无预览</div>
             )}
