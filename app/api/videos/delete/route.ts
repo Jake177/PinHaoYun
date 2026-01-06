@@ -16,6 +16,14 @@ export async function POST(request: Request) {
     const queueUrl =
       process.env.VIDEOS_DELETE_QUEUE_URL ||
       process.env["VIDEOS_DELETE_QUEUE_URL"];
+    
+    // Debug: 临时调试，部署后删除
+    console.log("[videos/delete] ENV:", {
+      VIDEOS_TABLE: tableName || "undefined",
+      VIDEOS_DELETE_QUEUE_URL: queueUrl || "undefined",
+      allEnvKeys: Object.keys(process.env).filter(k => k.includes("VIDEO") || k.includes("SQS") || k.includes("QUEUE")),
+    });
+    
     if (!tableName || !queueUrl) {
       const missing: string[] = [];
       if (!tableName) missing.push("VIDEOS_TABLE");
