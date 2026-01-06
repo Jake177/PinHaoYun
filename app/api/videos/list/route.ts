@@ -6,7 +6,7 @@ import { decodeIdToken } from "@/app/lib/jwt";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const region = "ap-southeast-2";
+const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const thumbnailBucket = process.env.S3_THUMBNAIL_BUCKET;
@@ -99,9 +99,10 @@ export async function GET(request: NextRequest) {
     const res = await ddb.send(
       new QueryCommand({
         TableName: tableName,
-        KeyConditionExpression: "email = :email",
+        KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
         ExpressionAttributeValues: {
           ":email": { S: normalizedEmail },
+          ":skPrefix": { S: "VIDEO#" },
         },
         ExclusiveStartKey: exclusiveStartKey,
         // Fetch more than limit to allow filtering, but cap at reasonable number
@@ -113,7 +114,13 @@ export async function GET(request: NextRequest) {
       res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [];
 
     const videos = records
-      .filter((r) => typeof r.sk === "string" && r.sk.startsWith("VIDEO#"))
+      .filter(
+        (r) =>
+          typeof r.sk === "string" &&
+          r.sk.startsWith("VIDEO#") &&
+          r.status !== "DELETING" &&
+          r.status !== "DELETED",
+      )
       .map((vid) => ({
         id: vid.videoId || vid.sk || "",
         originalKey: vid.originalKey,
@@ -129,6 +136,10 @@ export async function GET(request: NextRequest) {
         captureLocation: vid.captureLocation,
         captureLat: vid.captureLat,
         captureLon: vid.captureLon,
+        captureAddress: vid.captureAddress,
+        captureCity: vid.captureCity,
+        captureRegion: vid.captureRegion,
+        captureCountry: vid.captureCountry,
         captureAlt: vid.captureAlt,
         durationSec: vid.durationSec,
         width: vid.width,

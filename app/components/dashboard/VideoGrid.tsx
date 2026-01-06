@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import LocationEditorModal from "@/app/components/map/LocationEditorModal";
 
 type VideoItem = {
   id: string;
@@ -13,6 +14,10 @@ type VideoItem = {
   captureLocation?: string;
   captureLat?: number;
   captureLon?: number;
+  captureAddress?: string;
+  captureCity?: string;
+  captureRegion?: string;
+  captureCountry?: string;
   deviceMake?: string;
   deviceModel?: string;
   deviceSoftware?: string;
@@ -25,6 +30,18 @@ type VideoGridProps = {
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  onDelete?: (video: VideoItem) => Promise<void>;
+  onUpdateLocation?: (
+    videoId: string,
+    data: {
+      lat: number;
+      lon: number;
+      address: string;
+      city?: string;
+      region?: string;
+      country?: string;
+    },
+  ) => Promise<void>;
 };
 
 const formatSize = (value?: number) => {
@@ -49,10 +66,18 @@ export default function VideoGrid({
   hasMore,
   loadingMore,
   onLoadMore,
+  onDelete,
+  onUpdateLocation,
 }: VideoGridProps) {
   const [preview, setPreview] = useState<VideoItem | null>(null);
   const [showMeta, setShowMeta] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLocationEditor, setShowLocationEditor] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationSaving, setLocationSaving] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // Infinite scroll observer
@@ -78,6 +103,10 @@ export default function VideoGrid({
   useEffect(() => {
     // 每次切换预览，重置属性折叠状态
     setShowMeta(false);
+    setShowDeleteConfirm(false);
+    setShowLocationEditor(false);
+    setDeleteError(null);
+    setLocationError(null);
   }, [previewKey]);
 
   const groups = useMemo(() => {
@@ -111,6 +140,75 @@ export default function VideoGrid({
     setPreview(null);
     setShowMeta(false);
     setPreviewKey(null);
+    setShowDeleteConfirm(false);
+    setShowLocationEditor(false);
+    setDeleteError(null);
+    setLocationError(null);
+  };
+
+  const handleDeleteClick = () => {
+    if (!onDelete || deleting) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!preview || !onDelete || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(preview);
+      handleClose();
+    } catch (err: any) {
+      setDeleteError(err?.message || "删除失败");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    if (deleting) return;
+    setShowDeleteConfirm(false);
+    setDeleteError(null);
+  };
+
+  const handleEditLocation = () => {
+    if (!preview || !onUpdateLocation) return;
+    setLocationError(null);
+    setShowLocationEditor(true);
+  };
+
+  const handleSaveLocation = async (draft: {
+    lat: number;
+    lon: number;
+    address: string;
+    city?: string;
+    region?: string;
+    country?: string;
+  }) => {
+    if (!preview || !onUpdateLocation || locationSaving) return;
+    setLocationSaving(true);
+    setLocationError(null);
+    try {
+      await onUpdateLocation(preview.id, draft);
+      setPreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              captureLat: draft.lat,
+              captureLon: draft.lon,
+              captureAddress: draft.address,
+              captureCity: draft.city,
+              captureRegion: draft.region,
+              captureCountry: draft.country,
+            }
+          : prev,
+      );
+      setShowLocationEditor(false);
+    } catch (err: any) {
+      setLocationError(err?.message || "保存失败");
+    } finally {
+      setLocationSaving(false);
+    }
   };
 
   return (
@@ -225,6 +323,24 @@ export default function VideoGrid({
               >
                 {showMeta ? "收起属性" : "查看属性"}
               </button>
+              <button
+                type="button"
+                className="pill"
+                onClick={handleEditLocation}
+                disabled={!onUpdateLocation}
+                style={{ marginLeft: "0.5rem" }}
+              >
+                编辑位置
+              </button>
+              <button
+                type="button"
+                className="pill pill--error"
+                onClick={handleDeleteClick}
+                disabled={deleting || !onDelete}
+                style={{ marginLeft: "0.5rem" }}
+              >
+                {deleting ? "删除中..." : "删除视频"}
+              </button>
               {preview.originalUrl ? (
                 <a
                   className="pill pill--primary"
@@ -237,6 +353,11 @@ export default function VideoGrid({
                 </a>
               ) : null}
             </div>
+            {deleteError ? (
+              <p className="pill pill--error" style={{ marginTop: "0.75rem" }}>
+                {deleteError}
+              </p>
+            ) : null}
             <div
               className={`metadata-panel ${showMeta ? "metadata-panel--open" : ""}`}
               aria-expanded={showMeta}
@@ -255,8 +376,8 @@ export default function VideoGrid({
                 </li>
                 <li>
                   拍摄地点：
-                  {preview.captureLocation ||
-                    (preview.captureLat && preview.captureLon
+                  {preview.captureAddress ||
+                    (preview.captureLat != null && preview.captureLon != null
                       ? `${preview.captureLat}, ${preview.captureLon}`
                       : "未知")}
                 </li>
@@ -264,6 +385,54 @@ export default function VideoGrid({
             </div>
           </div>
         </div>
+      ) : null}
+      {showDeleteConfirm ? (
+        <div
+          className="confirm-modal"
+          role="alertdialog"
+          aria-modal="true"
+          onClick={handleCancelDelete}
+        >
+          <div
+            className="confirm-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="confirm-dialog__title">确认删除</h3>
+            <p className="confirm-dialog__text">删除后无法恢复。</p>
+            {deleteError ? (
+              <p className="pill pill--error">{deleteError}</p>
+            ) : null}
+            <div className="confirm-dialog__actions">
+              <button
+                type="button"
+                className="pill"
+                onClick={handleCancelDelete}
+                disabled={deleting}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="pill pill--error"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? "删除中..." : "确认删除"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showLocationEditor && preview ? (
+        <LocationEditorModal
+          initialLat={preview.captureLat}
+          initialLon={preview.captureLon}
+          initialAddress={preview.captureAddress}
+          onClose={() => setShowLocationEditor(false)}
+          onSave={handleSaveLocation}
+          saving={locationSaving}
+          error={locationError}
+        />
       ) : null}
     </>
   );

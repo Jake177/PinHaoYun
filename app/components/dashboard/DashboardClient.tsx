@@ -14,6 +14,10 @@ type VideoItem = {
   createdAt?: string;
   captureTime?: string;
   size?: number;
+  captureAddress?: string;
+  captureCity?: string;
+  captureRegion?: string;
+  captureCountry?: string;
 };
 
 type DashboardClientProps = {
@@ -114,25 +118,73 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterYear, filterMonth]);
 
+  const fetchProfile = useCallback(async () => {
+    try {
+      const resp = await fetch("/api/user/profile");
+      if (resp.ok) {
+        const data = await resp.json();
+        setProfileStats({
+          usedBytes: data.usedBytes || 0,
+          quotaBytes: data.quotaBytes || 256 * 1024 * 1024 * 1024,
+          videosCount: data.videosCount || 0,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchVideos(true), fetchProfile()]);
+  }, [fetchProfile, fetchVideos]);
+
   // 获取用户存储统计
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const resp = await fetch("/api/user/profile");
-        if (resp.ok) {
-          const data = await resp.json();
-          setProfileStats({
-            usedBytes: data.usedBytes || 0,
-            quotaBytes: data.quotaBytes || 256 * 1024 * 1024 * 1024,
-            videosCount: data.videosCount || 0,
-          });
-        }
-      } catch {
-        // ignore
-      }
-    };
     fetchProfile();
-  }, []);
+  }, [fetchProfile]);
+
+  const handleDelete = useCallback(
+    async (videoId: string) => {
+      const resp = await fetch("/api/videos/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId }),
+      });
+      if (!resp.ok) {
+        const data = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "删除失败");
+      }
+      await fetchVideos(true);
+      await fetchProfile();
+    },
+    [fetchProfile, fetchVideos],
+  );
+
+  const handleUpdateLocation = useCallback(
+    async (
+      videoId: string,
+      data: {
+        lat: number;
+        lon: number;
+        address: string;
+        city?: string;
+        region?: string;
+        country?: string;
+      },
+    ) => {
+      const resp = await fetch("/api/videos/location", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, ...data }),
+      });
+      if (!resp.ok) {
+        const err = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || "保存位置失败");
+      }
+      await fetchVideos(true);
+    },
+    [fetchVideos],
+  );
 
   const yearOptions = useMemo(() => {
     const years = new Set<string>();
@@ -155,7 +207,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             <p className="auth-hero__eyebrow">PinHaoYun</p>
             <h1>{greeting}</h1>
           </div>
-          <VideoUploader onUploaded={fetchVideos} />
+          <VideoUploader onUploaded={refreshAll} />
         </div>
         {profileStats && (
           <div className="dashboard-stats">
@@ -175,7 +227,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             </div>
             <div className="dashboard-stats__divider" />
             <div className="dashboard-stats__item">
-              <span className="dashboard-stats__icon">🎬</span>
+              <span className="material-symbols-outlined">
+                video_camera_front
+              </span>
               <div className="dashboard-stats__text">
                 <span className="dashboard-stats__label">视频数量</span>
                 <span className="dashboard-stats__value">{profileStats.videosCount} 个</span>
@@ -224,7 +278,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           <button
             type="button"
             className="icon-button"
-            onClick={() => fetchVideos(true)}
+            onClick={() => void refreshAll()}
             disabled={loading}
             aria-label="刷新视频列表"
             title="刷新"
@@ -256,10 +310,12 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         </div>
         <VideoGrid
           videos={videos}
-          onRefresh={() => fetchVideos(true)}
+          onRefresh={refreshAll}
           hasMore={hasMore}
           loadingMore={loadingMore}
           onLoadMore={loadMore}
+          onDelete={(video) => handleDelete(video.id)}
+          onUpdateLocation={handleUpdateLocation}
         />
       </section>
     </div>

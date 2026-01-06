@@ -12,7 +12,7 @@ const ALLOWED_EXT = ["mov", "mp4", "hevc", "m4v"];
 const originalBucket =
   process.env.S3_ORIGINAL_BUCKET;
 const region =
-  process.env.AWS_REGION ||
+  process.env.COGNITO_REGION ||
   "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 
@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       Key: key,
       ContentType: contentType,
       ContentLength: size,
+      StorageClass: "INTELLIGENT_TIERING",
     });
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });

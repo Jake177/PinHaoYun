@@ -6,7 +6,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { decodeIdToken } from "@/app/lib/jwt";
 
-const region = "ap-southeast-2";
+const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 const thumbnailBucket = process.env.S3_THUMBNAIL_BUCKET;
 
@@ -71,9 +71,10 @@ export async function GET() {
     const res = await ddb.send(
       new QueryCommand({
         TableName: tableName,
-        KeyConditionExpression: "email = :email",
+        KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
         ExpressionAttributeValues: {
           ":email": { S: normalizedEmail },
+          ":skPrefix": { S: "VIDEO#" },
         },
       })
     );
@@ -87,6 +88,8 @@ export async function GET() {
         (r) =>
           typeof r.sk === "string" &&
           r.sk.startsWith("VIDEO#") &&
+          r.status !== "DELETING" &&
+          r.status !== "DELETED" &&
           typeof r.captureLat === "number" &&
           typeof r.captureLon === "number" &&
           r.captureLat !== 0 &&

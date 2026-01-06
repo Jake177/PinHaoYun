@@ -6,6 +6,7 @@ const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/hevc"];
 const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
 const MAX_CONCURRENCY = 3; // Maximum concurrent uploads
 const HASH_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB - only hash first chunk for speed
+const PART_SIZE = 10 * 1024 * 1024; // 10MB multipart size
 
 type UploadState = {
   name: string;
@@ -50,16 +51,34 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     return `${hashHex}-${file.size}`;
   };
 
-  const uploadWithProgress = (
+  const requestJson = async <T,>(
     url: string,
-    file: File,
-    onProgress: (pct: number) => void,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T> => {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!resp.ok) {
+      const data = (await resp.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error || "请求失败");
+    }
+    return (await resp.json()) as T;
+  };
+
+  const uploadPartWithProgress = (
+    url: string,
+    part: Blob,
+    onProgress: (loaded: number) => void,
     signal?: AbortSignal,
   ) =>
-    new Promise<void>((resolve, reject) => {
+    new Promise<string>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", url, true);
-      xhr.setRequestHeader("Content-Type", file.type);
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
 
       if (signal) {
         signal.addEventListener("abort", () => {
@@ -70,25 +89,31 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
-          const pct = Math.round((e.loaded / e.total) * 100);
-          onProgress(pct);
+          onProgress(e.loaded);
         }
       };
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          onProgress(100);
-          resolve();
+          const etag = xhr.getResponseHeader("ETag")?.replace(/"/g, "");
+          if (!etag) {
+            reject(new Error("缺少 ETag，请检查 S3 CORS 暴露 ETag 头"));
+            return;
+          }
+          resolve(etag);
         } else {
           reject(new Error("上传失败"));
         }
       };
       xhr.onerror = () => reject(new Error("上传失败"));
-      xhr.send(file);
+      xhr.send(part);
     });
 
   // Process a single file upload
   const processFile = async (file: File, signal?: AbortSignal): Promise<void> => {
     const fileName = file.name;
+    let uploadId: string | undefined;
+    let key: string | undefined;
+    let bucket: string | undefined;
 
     // Validate file type and size first
     const extAllowed = ALLOWED_TYPES.includes(file.type);
@@ -119,29 +144,24 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     updateItem(fileName, { status: "uploading", progress: 0 });
 
     try {
-      const presignResp = await fetch("/api/videos/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const initResp = await requestJson<{
+        uploadId?: string;
+        key?: string;
+        bucket?: string;
+        duplicate?: boolean;
+      }>(
+        "/api/videos/multipart/init",
+        {
           fileName: file.name,
           contentType: file.type,
           size: file.size,
           contentHash,
-        }),
+        },
         signal,
-      });
+      );
 
-      if (!presignResp.ok) {
-        const data = (await presignResp.json()) as { error?: string };
-        throw new Error(data.error || "获取上传地址失败");
-      }
-
-      const { uploadUrl, key, bucket, duplicate } = (await presignResp.json()) as {
-        uploadUrl: string;
-        key: string;
-        bucket: string;
-        duplicate?: boolean;
-      };
+      ({ uploadId, key, bucket } = initResp);
+      const { duplicate } = initResp;
 
       if (duplicate) {
         updateItem(fileName, {
@@ -152,19 +172,56 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
         return;
       }
 
-      // Upload to S3
-      await uploadWithProgress(
-        uploadUrl,
-        file,
-        (pct) => updateItem(fileName, { progress: pct }),
+      if (!uploadId || !key || !bucket) {
+        throw new Error("初始化上传失败");
+      }
+
+      const totalParts = Math.max(1, Math.ceil(file.size / PART_SIZE));
+      const parts: { partNumber: number; etag: string }[] = [];
+      let uploadedBytes = 0;
+
+      for (let partNumber = 1; partNumber <= totalParts; partNumber += 1) {
+        if (signal?.aborted) {
+          throw new Error("上传已取消");
+        }
+        const start = (partNumber - 1) * PART_SIZE;
+        const end = Math.min(start + PART_SIZE, file.size);
+        const blob = file.slice(start, end);
+
+        const { uploadUrl } = await requestJson<{ uploadUrl: string }>(
+          "/api/videos/multipart/part",
+          {
+            key,
+            uploadId,
+            partNumber,
+          },
+          signal,
+        );
+
+        const etag = await uploadPartWithProgress(
+          uploadUrl,
+          blob,
+          (loaded) => {
+            const pct = Math.round(((uploadedBytes + loaded) / file.size) * 100);
+            updateItem(fileName, { progress: pct });
+          },
+          signal,
+        );
+
+        parts.push({ partNumber, etag });
+        uploadedBytes += blob.size;
+      }
+
+      await requestJson(
+        "/api/videos/multipart/complete",
+        { key, uploadId, parts },
         signal,
       );
 
       // Notify backend
-      await fetch("/api/videos/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await requestJson(
+        "/api/videos/notify",
+        {
           bucket,
           key,
           originalName: file.name,
@@ -172,12 +229,19 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
           size: file.size,
           uploadedAt: new Date().toISOString(),
           contentHash,
-        }),
+        },
         signal,
-      });
+      );
 
       updateItem(fileName, { progress: 100, status: "done" });
     } catch (err: any) {
+      if (uploadId && key) {
+        try {
+          await requestJson("/api/videos/multipart/abort", { key, uploadId });
+        } catch {
+          // ignore abort errors
+        }
+      }
       if (err?.name === "AbortError" || signal?.aborted) {
         updateItem(fileName, { status: "error", message: "已取消" });
       } else {

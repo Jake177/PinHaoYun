@@ -5,7 +5,7 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import crypto from "node:crypto";
 
-const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_AWS_REGION;
+const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
 const clientSecret = process.env.COGNITO_CLIENT_SECRET;
 

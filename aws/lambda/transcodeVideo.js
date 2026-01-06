@@ -4,6 +4,7 @@
 
 const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const { createWriteStream, createReadStream } = require("node:fs");
 const { unlink } = require("node:fs/promises");
 const { execFile } = require("node:child_process");
@@ -16,11 +17,13 @@ const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
 const ddb = new DynamoDBClient({});
+const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
 const FFPROBE_PATH = process.env.FFPROBE_PATH || "/opt/bin/ffprobe";
 const FFMPEG_PATH = process.env.FFMPEG_PATH || "/opt/bin/ffmpeg";
 const THUMBNAIL_BUCKET = process.env.S3_THUMBNAIL_BUCKET;
+const LOCATION_ENRICH_QUEUE_URL = process.env.LOCATION_ENRICH_QUEUE_URL;
 
 const parseFraction = (value) => {
   if (!value || value === "0/0") return undefined;
@@ -118,6 +121,26 @@ const makeThumbnail = async ({ bucket, key, userId, videoId, filePath }) => {
 const toAttrNumber = (value) => ({ N: String(value) });
 const toAttrString = (value) => ({ S: String(value) });
 
+const enqueueLocationEnrichment = async ({ email, videoId, lat, lon }) => {
+  if (!LOCATION_ENRICH_QUEUE_URL) return;
+  if (lat === undefined || lon === undefined) return;
+  try {
+    await sqs.send(
+      new SendMessageCommand({
+        QueueUrl: LOCATION_ENRICH_QUEUE_URL,
+        MessageBody: JSON.stringify({
+          email,
+          videoId,
+          lat,
+          lon,
+        }),
+      }),
+    );
+  } catch (error) {
+    console.warn("Failed to enqueue location enrichment", error);
+  }
+};
+
 const updateVideoMetadata = async ({
   email,
   videoId,
@@ -143,6 +166,13 @@ const updateVideoMetadata = async ({
     values[valueKey] = attrValue;
     setParts.push(`${nameKey} = ${valueKey}`);
   };
+  const addFieldIfMissing = (field, attrValue) => {
+    const nameKey = `#f_${field}`;
+    const valueKey = `:${field}`;
+    names[nameKey] = field;
+    values[valueKey] = attrValue;
+    setParts.push(`${nameKey} = if_not_exists(${nameKey}, ${valueKey})`);
+  };
 
   if (originalBucket) addField("originalBucket", toAttrString(originalBucket));
   if (originalKey) addField("originalKey", toAttrString(originalKey));
@@ -157,10 +187,12 @@ const updateVideoMetadata = async ({
     addField("captureLocation", toAttrString(metadata.captureLocation));
   }
   if (metadata.captureLat !== undefined) {
-    addField("captureLat", toAttrNumber(metadata.captureLat));
+    addFieldIfMissing("captureLat", toAttrNumber(metadata.captureLat));
+    addFieldIfMissing("originalCaptureLat", toAttrNumber(metadata.captureLat));
   }
   if (metadata.captureLon !== undefined) {
-    addField("captureLon", toAttrNumber(metadata.captureLon));
+    addFieldIfMissing("captureLon", toAttrNumber(metadata.captureLon));
+    addFieldIfMissing("originalCaptureLon", toAttrNumber(metadata.captureLon));
   }
   if (metadata.captureAlt !== undefined) {
     addField("captureAlt", toAttrNumber(metadata.captureAlt));
@@ -323,6 +355,12 @@ exports.handler = async (event) => {
           thumbnailBucket: thumbResult?.bucket,
           thumbnailKey: thumbResult?.key,
           metadata,
+        });
+        await enqueueLocationEnrichment({
+          email: userId,
+          videoId,
+          lat: metadata.captureLat,
+          lon: metadata.captureLon,
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
