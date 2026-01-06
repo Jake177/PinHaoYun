@@ -6,14 +6,16 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
-const tableName = process.env.VIDEOS_TABLE;
-const queueUrl = process.env.VIDEOS_DELETE_QUEUE_URL;
-
 const ddb = new DynamoDBClient({ region });
 const sqs = new SQSClient({ region });
 
 export async function POST(request: Request) {
   try {
+    const tableName =
+      process.env.VIDEOS_TABLE || process.env["VIDEOS_TABLE"];
+    const queueUrl =
+      process.env.VIDEOS_DELETE_QUEUE_URL ||
+      process.env["VIDEOS_DELETE_QUEUE_URL"];
     if (!tableName || !queueUrl) {
       const missing: string[] = [];
       if (!tableName) missing.push("VIDEOS_TABLE");
