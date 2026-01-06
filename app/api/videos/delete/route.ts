@@ -6,23 +6,21 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
+const awsAccountId = process.env.ACCOUNT_ID || "883086653724";
+const deleteQueueName = process.env.DELETE_QUEUE_NAME || "pinhaoyun_delete_video_sqs";
+
 const ddb = new DynamoDBClient({ region });
 const sqs = new SQSClient({ region });
 
+// 构建 SQS URL，避免直接存储完整 URL 的环境变量问题
+function buildSqsUrl(queueName: string): string {
+  return `https://sqs.${region}.amazonaws.com/${awsAccountId}/${queueName}`;
+}
+
 export async function POST(request: Request) {
   try {
-    const tableName =
-      process.env.VIDEOS_TABLE || process.env["VIDEOS_TABLE"];
-    const queueUrl =
-      process.env.VIDEOS_DELETE_QUEUE_URL ||
-      process.env["VIDEOS_DELETE_QUEUE_URL"];
-    
-    // Debug: 临时调试，部署后删除
-    console.log("[videos/delete] ENV:", {
-      VIDEOS_TABLE: tableName || "undefined",
-      VIDEOS_DELETE_QUEUE_URL: queueUrl || "undefined",
-      allEnvKeys: Object.keys(process.env).filter(k => k.includes("VIDEO") || k.includes("SQS") || k.includes("QUEUE")),
-    });
+    const tableName = process.env.VIDEOS_TABLE;
+    const queueUrl = process.env.VIDEOS_DELETE_QUEUE_URL || buildSqsUrl(deleteQueueName);
     
     if (!tableName || !queueUrl) {
       const missing: string[] = [];
