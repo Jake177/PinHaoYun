@@ -26,8 +26,18 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const removeTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const clearRemoveTimer = (name: string) => {
+    const timer = removeTimersRef.current.get(name);
+    if (timer) {
+      clearTimeout(timer);
+      removeTimersRef.current.delete(name);
+    }
+  };
 
   const removeItem = (name: string) => {
+    clearRemoveTimer(name);
     setItems((prev) => prev.filter((item) => item.name !== name));
   };
 
@@ -36,6 +46,14 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
       prev.map((item) => (item.name === name ? { ...item, ...patch } : item)),
     );
   }, []);
+
+  const scheduleAutoRemove = (name: string) => {
+    if (removeTimersRef.current.has(name)) return;
+    const timer = setTimeout(() => {
+      removeItem(name);
+    }, 5000);
+    removeTimersRef.current.set(name, timer);
+  };
 
   const createVideoThumbnail = (file: File): Promise<string | null> =>
     new Promise((resolve) => {
@@ -292,6 +310,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
       );
 
       updateItem(fileName, { progress: 100, status: "done" });
+      scheduleAutoRemove(fileName);
     } catch (err: any) {
       if (uploadId && key) {
         try {

@@ -1262,6 +1262,27 @@ select.input {
     background: #fff;
     padding-top: 0.15rem;
     z-index: 1;
+    min-height: 44px;
+  }
+
+  .metadata-sheet__close {
+    position: absolute;
+    right: 0.75rem;
+    top: 0.35rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--muted);
+  }
+
+  .metadata-sheet__close .material-symbols-outlined {
+    font-size: 20px;
   }
 
   /* Uploader on mobile */

@@ -6,8 +6,8 @@ type AuthHeroProps = {
 
 export default function AuthHero({
   eyebrow = "PinHaoYun",
-  title = "上网买拼多多，\n外卖点拼好饭\n视频用拼好云，\n人生就是要拼。",
-  description = "拼好云使用AWS无服务器架构，让您绝对不为服务器多花一分钱。",
+  title = "上网买拼多多，\n外卖点拼好饭。\n视频用拼好云，\n人生就是要拼。",
+  description = "由AWS云服务支持",
 }: AuthHeroProps) {
   const titleLines = title
     .split("\n")

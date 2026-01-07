@@ -535,6 +535,14 @@ export default function VideoGrid({
                   <span />
                 </button>
                 <span className="metadata-sheet__title">属性</span>
+                <button
+                  type="button"
+                  className="metadata-sheet__close"
+                  onClick={closeSheet}
+                  aria-label="关闭属性"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
               <ul>
                 <li>拍摄时间：{formatDate(preview.captureTime || preview.createdAt) || "未知"}</li>
