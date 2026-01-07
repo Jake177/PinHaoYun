@@ -13,6 +13,7 @@ type UploadState = {
   progress: number;
   status: "pending" | "hashing" | "uploading" | "done" | "skipped" | "error";
   message?: string;
+  previewUrl?: string;
 };
 
 type VideoUploaderProps = {
@@ -35,6 +36,63 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
       prev.map((item) => (item.name === name ? { ...item, ...patch } : item)),
     );
   }, []);
+
+  const createVideoThumbnail = (file: File): Promise<string | null> =>
+    new Promise((resolve) => {
+      const objectUrl = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      let captured = false;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(objectUrl);
+      };
+
+      const captureFrame = () => {
+        if (captured) return;
+        captured = true;
+        const width = video.videoWidth || 160;
+        const height = video.videoHeight || 90;
+        const maxSide = 96;
+        const scale = Math.min(1, maxSide / Math.max(width, height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        try {
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          cleanup();
+          resolve(dataUrl);
+        } catch {
+          cleanup();
+          resolve(null);
+        }
+      };
+
+      video.addEventListener("loadedmetadata", () => {
+        const seekTo = Math.min(0.1, Math.max(0, video.duration / 4 || 0));
+        if (Number.isFinite(seekTo) && seekTo > 0) {
+          video.currentTime = seekTo;
+        }
+      }, { once: true });
+
+      video.addEventListener("seeked", captureFrame, { once: true });
+      video.addEventListener("loadeddata", captureFrame, { once: true });
+      video.addEventListener("error", () => {
+        cleanup();
+        resolve(null);
+      }, { once: true });
+
+      video.preload = "metadata";
+      video.muted = true;
+      video.playsInline = true;
+      video.src = objectUrl;
+    });
 
   // Fast hash using first chunk + file size for uniqueness
   const computeQuickHash = async (file: File): Promise<string> => {
@@ -270,6 +328,13 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     // Convert FileList to array for easier handling
     const fileArray = Array.from(files);
 
+    // Generate local thumbnails (best-effort)
+    fileArray.forEach((file) => {
+      createVideoThumbnail(file).then((url) => {
+        if (url) updateItem(file.name, { previewUrl: url });
+      });
+    });
+
     // Concurrent upload with limited concurrency
     const uploadQueue = [...fileArray];
     const activeUploads: Promise<void>[] = [];
@@ -344,7 +409,14 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
         <ul className="uploader__list">
           {items.map((item) => (
             <li key={item.name} className="uploader__item">
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="uploader__thumb" aria-hidden="true">
+                {item.previewUrl ? (
+                  <img src={item.previewUrl} alt="" loading="lazy" />
+                ) : (
+                  <span>VIDEO</span>
+                )}
+              </div>
+              <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
                 <div className="ellipsis">{item.name}</div>
                 <div className="progress">
                   <div

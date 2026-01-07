@@ -1,4 +1,7 @@
-# Next.js App Router Setup
+# PinHaoYun
+
+**Title:** PinHaoYun
+**Description:** PinHaoYun is a personal cloud video library for uploading, organizing, and revisiting memories. It supports multi-device uploads, automatic thumbnails and metadata extraction, map-based location editing, and safe deletion workflows in a lightweight, stable experience.
 
 This project is now configured as a minimal [Next.js](https://nextjs.org/) application using the App Router. It includes TypeScript support and Material UI dependencies.
 

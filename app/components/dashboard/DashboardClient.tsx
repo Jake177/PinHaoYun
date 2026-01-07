@@ -53,6 +53,8 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingMoreRef = useRef(false);
   const [profileStats, setProfileStats] = useState<{
     usedBytes: number;
     quotaBytes: number;
@@ -73,8 +75,11 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   const fetchVideos = useCallback(async (reset = true) => {
     if (reset) {
       setLoading(true);
+      nextCursorRef.current = null;
       setNextCursor(null);
     } else {
+      if (loadingMoreRef.current) return;
+      loadingMoreRef.current = true;
       setLoadingMore(true);
     }
     setError(null);
@@ -85,7 +90,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
       const date = buildDateQuery();
       if (date) params.set("date", date);
-      if (!reset && nextCursor) params.set("cursor", nextCursor);
+      if (!reset && nextCursorRef.current) {
+        params.set("cursor", nextCursorRef.current);
+      }
 
       const resp = await fetch(`/api/videos/list?${params.toString()}`);
       if (!resp.ok) {
@@ -102,23 +109,38 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       if (reset) {
         setVideos(data.videos || []);
       } else {
-        setVideos((prev) => [...prev, ...(data.videos || [])]);
+        setVideos((prev) => {
+          const existing = new Set(prev.map((v) => v.id));
+          const merged = [...prev];
+          (data.videos || []).forEach((v) => {
+            if (!existing.has(v.id)) {
+              merged.push(v);
+            }
+          });
+          return merged;
+        });
       }
-      setNextCursor(data.nextCursor || null);
+      const newCursor = data.nextCursor || null;
+      nextCursorRef.current = newCursor;
+      setNextCursor(newCursor);
       setHasMore(data.hasMore ?? false);
     } catch (err: any) {
       setError(err?.message || "加载视频失败");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (reset) {
+        setLoading(false);
+      } else {
+        setLoadingMore(false);
+        loadingMoreRef.current = false;
+      }
     }
-  }, [buildDateQuery, nextCursor]);
+  }, [buildDateQuery]);
 
   const loadMore = useCallback(() => {
-    if (!loadingMore && hasMore) {
+    if (!loadingMoreRef.current && hasMore) {
       fetchVideos(false);
     }
-  }, [fetchVideos, loadingMore, hasMore]);
+  }, [fetchVideos, hasMore]);
 
   // 初次加载 + 筛选条件变化时重新获取
   useEffect(() => {
