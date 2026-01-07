@@ -420,7 +420,9 @@ export default function VideoGrid({
             >
               加载更多
             </button>
-          ) : null}
+          ) : (
+            <span className="pill">已到底</span>
+          )}
         </div>
       )}
 
@@ -460,49 +462,55 @@ export default function VideoGrid({
             ) : (
               <div className="empty-state">暂无预览</div>
             )}
-            <div className="metadata-toggle preview-actions">
-              <button
-                type="button"
-                className="pill pill--icon"
-                onClick={toggleSheet}
-                aria-label={showMeta ? "收起属性" : "查看属性"}
-                aria-pressed={showMeta}
-                title={showMeta ? "收起属性" : "查看属性"}
-              >
-                <span className="material-symbols-outlined">info</span>
-              </button>
-              <button
-                type="button"
-                className="pill pill--icon"
-                onClick={handleEditLocation}
-                disabled={!onUpdateLocation}
-                aria-label="编辑位置"
-                title="编辑位置"
-              >
-                <span className="material-symbols-outlined">map_search</span>
-              </button>
-              <button
-                type="button"
-                className="pill pill--error pill--icon"
-                onClick={handleDeleteClick}
-                disabled={deleting || !onDelete}
-                aria-label={deleting ? "删除中..." : "删除"}
-                title={deleting ? "删除中..." : "删除"}
-              >
-                <span className="material-symbols-outlined">delete</span>
-              </button>
-              {preview.originalUrl ? (
-                <a
-                  className="pill pill--primary pill--icon"
-                  href={preview.originalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  aria-label="下载"
-                  title="下载"
+            <div
+              className={`metadata-toggle preview-actions ${
+                showMeta ? "metadata-toggle--inactive" : ""
+              }`}
+            >
+              <div className="preview-actions__bar">
+                <button
+                  type="button"
+                  className="pill pill--icon"
+                  onClick={toggleSheet}
+                  aria-label={showMeta ? "收起属性" : "查看属性"}
+                  aria-pressed={showMeta}
+                  title={showMeta ? "收起属性" : "查看属性"}
                 >
-                  <span className="material-symbols-outlined">download</span>
-                </a>
-              ) : null}
+                  <span className="material-symbols-outlined">info</span>
+                </button>
+                <button
+                  type="button"
+                  className="pill pill--icon"
+                  onClick={handleEditLocation}
+                  disabled={!onUpdateLocation}
+                  aria-label="编辑位置"
+                  title="编辑位置"
+                >
+                  <span className="material-symbols-outlined">map_search</span>
+                </button>
+                <button
+                  type="button"
+                  className="pill pill--icon pill--danger"
+                  onClick={handleDeleteClick}
+                  disabled={deleting || !onDelete}
+                  aria-label={deleting ? "删除中..." : "删除"}
+                  title={deleting ? "删除中..." : "删除"}
+                >
+                  <span className="material-symbols-outlined">delete</span>
+                </button>
+                {preview.originalUrl ? (
+                  <a
+                    className="pill pill--icon pill--primary"
+                    href={preview.originalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="下载"
+                    title="下载"
+                  >
+                    <span className="material-symbols-outlined">download</span>
+                  </a>
+                ) : null}
+              </div>
             </div>
             {deleteError ? (
               <p className="pill pill--error" style={{ marginTop: "0.75rem" }}>
