@@ -4,11 +4,35 @@ import {
   InitiateAuthCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import crypto from "node:crypto";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
 
 const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const userPoolId = process.env.COGNITO_USER_POOL_ID || process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-const clientSecret = process.env.COGNITO_CLIENT_SECRET; // server-only
+const secret_name = "pinhaoyun/secret/COGNITO_CLIENT_SECRET";
+const client = new SecretsManagerClient({
+  region: "ap-southeast-2",
+});
+
+let response;
+
+try {
+  response = await client.send(
+    new GetSecretValueCommand({
+      SecretId: secret_name,
+      VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
+    })
+  );
+} catch (error) {
+  // For a list of exceptions thrown, see
+  // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+  throw error;
+}
+
+const clientSecret = response.SecretString || process.env.COGNITO_CLIENT_SECRET;
 
 if (!region || !userPoolId || !clientId || !clientSecret) {
   console.warn("[auth/sign-in] Missing env: COGNITO_REGION, COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET");

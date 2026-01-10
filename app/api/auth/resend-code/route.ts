@@ -4,10 +4,34 @@ import {
   ResendConfirmationCodeCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
 import crypto from "node:crypto";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
 
 const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-const clientSecret = process.env.COGNITO_CLIENT_SECRET;
+const secret_name = "pinhaoyun/secret/COGNITO_CLIENT_SECRET";
+const client = new SecretsManagerClient({
+  region: "ap-southeast-2",
+});
+
+let response;
+
+try {
+  response = await client.send(
+    new GetSecretValueCommand({
+      SecretId: secret_name,
+      VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
+    })
+  );
+} catch (error) {
+  // For a list of exceptions thrown, see
+  // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+  throw error;
+}
+
+const clientSecret = response.SecretString || process.env.COGNITO_CLIENT_SECRET;
 
 function secretHash(username: string) {
   if (!clientSecret) {
