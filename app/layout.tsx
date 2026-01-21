@@ -5,6 +5,7 @@ import "./ui/globals.css";
 import { manrope } from "./ui/font";
 import Navbar from "./ui/navbar";
 import { decodeIdToken } from "./lib/jwt";
+import ResumeGuard from "./components/layout/ResumeGuard";
 
 export const metadata: Metadata = {
   title: "Pin Hao Yun",
@@ -62,6 +63,7 @@ export default async function RootLayout({
       </head>
       <body className={manrope.className}>
         <div className="site-shell">
+          <ResumeGuard />
           <Navbar isAuthenticated={isAuthenticated} username={username} />
           <div className="site-content">{children}</div>
         </div>

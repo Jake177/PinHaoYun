@@ -1840,25 +1840,14 @@ select.input {
 
 @media (max-width: 640px) {
   .hamburger-dropdown {
-    position: fixed;
-    top: auto;
-    bottom: 0;
-    left: 0;
+    position: absolute;
+    top: calc(100% + 8px);
     right: 0;
-    width: 100%;
-    border-radius: 20px 20px 0 0;
-    animation: dropdown-enter-mobile 0.25s ease;
-  }
-
-  @keyframes dropdown-enter-mobile {
-    from {
-      opacity: 0;
-      transform: translateY(100%);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    left: auto;
+    bottom: auto;
+    width: min(240px, 85vw);
+    border-radius: 16px;
+    animation: dropdown-enter 0.2s ease;
   }
 
   .map-page {

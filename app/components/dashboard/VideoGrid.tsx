@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LocationEditorModal from "@/app/components/map/LocationEditorModal";
 
 type VideoItem = {
@@ -115,12 +115,22 @@ export default function VideoGrid({
     height: 1,
     currentTranslate: 100,
     moved: false,
+    active: false,
+    pointerId: -1,
+    captured: false,
   });
 
   const SHEET_TRANSLATE = {
     full: 0,
     half: 45,
     closed: 100,
+  };
+
+  const isInteractiveTarget = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(
+      target.closest("button, a, input, textarea, select"),
+    );
   };
 
   // Infinite scroll observer
@@ -190,29 +200,45 @@ export default function VideoGrid({
     }
   };
 
-  const handleSheetPointerDown = (
-    event: React.PointerEvent<HTMLButtonElement>,
+  const startSheetDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    capturePointer: boolean,
   ) => {
     if (!showMeta) return;
     const sheet = sheetRef.current;
     if (!sheet) return;
+    if (isInteractiveTarget(event.target)) return;
     dragRef.current.startY = event.clientY;
     dragRef.current.startTranslate = sheetTranslate;
     dragRef.current.currentTranslate = sheetTranslate;
     dragRef.current.height = sheet.getBoundingClientRect().height || 1;
     dragRef.current.moved = false;
-    setIsSheetDragging(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current.active = true;
+    dragRef.current.pointerId = event.pointerId;
+    dragRef.current.captured = false;
+    if (capturePointer) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current.captured = true;
+    }
   };
 
   const handleSheetPointerMove = (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: React.PointerEvent<HTMLElement>,
   ) => {
-    if (!isSheetDragging) return;
+    if (!dragRef.current.active) return;
+    if (event.pointerId !== dragRef.current.pointerId) return;
     const delta = event.clientY - dragRef.current.startY;
     if (Math.abs(delta) > 4) {
       dragRef.current.moved = true;
+      if (!isSheetDragging) {
+        setIsSheetDragging(true);
+        if (!dragRef.current.captured) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current.captured = true;
+        }
+      }
     }
+    if (!dragRef.current.moved) return;
     const next =
       dragRef.current.startTranslate +
       (delta / dragRef.current.height) * 100;
@@ -224,21 +250,39 @@ export default function VideoGrid({
   };
 
   const handleSheetPointerUp = (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: React.PointerEvent<HTMLElement>,
   ) => {
-    if (!isSheetDragging) return;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!dragRef.current.active) return;
+    if (event.pointerId !== dragRef.current.pointerId) return;
+    if (dragRef.current.captured) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const moved = dragRef.current.moved;
+    dragRef.current.active = false;
+    dragRef.current.captured = false;
+    dragRef.current.pointerId = -1;
     setIsSheetDragging(false);
-    snapSheet(dragRef.current.currentTranslate);
+    if (moved) {
+      snapSheet(dragRef.current.currentTranslate);
+    }
   };
 
   const handleSheetPointerCancel = (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event: React.PointerEvent<HTMLElement>,
   ) => {
-    if (!isSheetDragging) return;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!dragRef.current.active) return;
+    if (event.pointerId !== dragRef.current.pointerId) return;
+    if (dragRef.current.captured) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    const moved = dragRef.current.moved;
+    dragRef.current.active = false;
+    dragRef.current.captured = false;
+    dragRef.current.pointerId = -1;
     setIsSheetDragging(false);
-    snapSheet(dragRef.current.currentTranslate);
+    if (moved) {
+      snapSheet(dragRef.current.currentTranslate);
+    }
   };
 
   const handleSheetToggle = () => {
@@ -281,7 +325,7 @@ export default function VideoGrid({
   };
 
   // 重置属性开关
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setPreview(null);
     setShowMeta(false);
     setPreviewKey(null);
@@ -289,7 +333,25 @@ export default function VideoGrid({
     setShowLocationEditor(false);
     setDeleteError(null);
     setLocationError(null);
-  };
+  }, []);
+
+  useEffect(() => {
+    const handleResume = () => {
+      handleClose();
+      setIsSheetDragging(false);
+      setSheetTranslate(SHEET_TRANSLATE.closed);
+      dragRef.current.startY = 0;
+      dragRef.current.startTranslate = SHEET_TRANSLATE.closed;
+      dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
+      dragRef.current.moved = false;
+      dragRef.current.active = false;
+      dragRef.current.captured = false;
+      dragRef.current.pointerId = -1;
+    };
+
+    window.addEventListener("app:resume", handleResume);
+    return () => window.removeEventListener("app:resume", handleResume);
+  }, [handleClose]);
 
   const handleDeleteClick = () => {
     if (!onDelete || deleting) return;
@@ -528,13 +590,17 @@ export default function VideoGrid({
                   "--sheet-translate": `${sheetTranslate}%`,
                 } as React.CSSProperties
               }
+              onPointerDown={(event) => startSheetDrag(event, false)}
+              onPointerMove={handleSheetPointerMove}
+              onPointerUp={handleSheetPointerUp}
+              onPointerCancel={handleSheetPointerCancel}
             >
               <div className="metadata-sheet__header">
                 <button
                   type="button"
                   className="metadata-sheet__handle"
                   onClick={handleSheetToggle}
-                  onPointerDown={handleSheetPointerDown}
+                  onPointerDown={(event) => startSheetDrag(event, true)}
                   onPointerMove={handleSheetPointerMove}
                   onPointerUp={handleSheetPointerUp}
                   onPointerCancel={handleSheetPointerCancel}
