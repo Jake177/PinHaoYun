@@ -39,6 +39,9 @@ type VideoGridProps = {
   loadingMore?: boolean;
   onLoadMore?: () => void;
   onDelete?: (video: VideoItem) => Promise<void>;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (videoId: string) => void;
   onUpdateLocation?: (
     videoId: string,
     data: {
@@ -94,6 +97,9 @@ export default function VideoGrid({
   loadingMore,
   onLoadMore,
   onDelete,
+  selectionMode,
+  selectedIds,
+  onToggleSelect,
   onUpdateLocation,
 }: VideoGridProps) {
   const [preview, setPreview] = useState<VideoItem | null>(null);
@@ -431,27 +437,60 @@ export default function VideoGrid({
             <div className="video-grid">
               {group.items.map((video) => {
                 const previewUrl = video.thumbnailUrl || video.originalUrl || "";
+                const isSelecting = Boolean(selectionMode && onToggleSelect);
+                const isSelected = Boolean(isSelecting && selectedIds?.has(video.id));
+                const handleSelect = () => {
+                  if (!isSelecting) return;
+                  onToggleSelect?.(video.id);
+                };
+                const handlePreviewClick = () => {
+                  if (isSelecting) {
+                    handleSelect();
+                    return;
+                  }
+                  setPreview(video);
+                  setPreviewKey(video.originalUrl || video.id);
+                };
                 return (
-                  <article className="video-card" key={video.id}>
-                    <div className="video-thumb">
+                  <article
+                    className={`video-card ${isSelected ? "video-card--selected" : ""} ${
+                      isSelecting ? "video-card--selecting" : ""
+                    }`}
+                    key={video.id}
+                  >
+                    {isSelecting ? (
+                      <button
+                        type="button"
+                        className={`video-select ${isSelected ? "video-select--active" : ""}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleSelect();
+                        }}
+                        aria-label={isSelected ? "取消选择视频" : "选择视频"}
+                      >
+                        <span className="material-symbols-outlined">
+                          {isSelected ? "check_circle" : "radio_button_unchecked"}
+                        </span>
+                      </button>
+                    ) : null}
+                    <div
+                      className="video-thumb"
+                      role="button"
+                      tabIndex={0}
+                      onClick={handlePreviewClick}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handlePreviewClick();
+                        }
+                      }}
+                      aria-label={isSelecting ? "选择视频" : "打开预览"}
+                    >
                       {previewUrl ? (
                         <>
                           <video
                             src={previewUrl}
                             muted
                             preload="metadata"
-                            onClick={() => {
-                              setPreview(video);
-                              setPreviewKey(video.originalUrl || video.id);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                setPreview(video);
-                                setPreviewKey(video.originalUrl || video.id);
-                              }
-                            }}
-                            role="button"
-                            tabIndex={0}
                             playsInline
                             poster={video.thumbnailUrl || video.originalUrl || undefined}
                           />

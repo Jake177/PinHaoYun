@@ -526,9 +526,25 @@ select.input {
 }
 
 .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  flex: 1 1 auto;
+}
+
+.panel-filters {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .panel-title .input {
@@ -734,6 +750,21 @@ select.input {
   flex-direction: column;
   gap: 0.6rem;
   padding: 0.75rem;
+  position: relative;
+}
+
+.video-card--selecting {
+  cursor: pointer;
+}
+
+.video-card--selecting .video-thumb video {
+  pointer-events: none;
+}
+
+.video-card--selected {
+  border-color: rgba(37, 99, 235, 0.6);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  background: #f8fbff;
 }
 
 .video-thumb {
@@ -746,6 +777,33 @@ select.input {
   cursor: pointer;
   overflow: hidden;
   position: relative;
+}
+
+.video-select {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  background: rgba(255, 255, 255, 0.95);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
+  cursor: pointer;
+}
+
+.video-select .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.video-select--active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
 }
 
 .video-thumb video {
@@ -1173,6 +1231,15 @@ select.input {
 
   .panel-title .input {
     max-width: 100%;
+  }
+
+  .panel-filters {
+    width: 100%;
+  }
+
+  .panel-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   /* Video grid - 2 columns on mobile */
