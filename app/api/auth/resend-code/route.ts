@@ -11,29 +11,43 @@ import {
 
 const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-const secret_name = "pinhaoyun/secret/COGNITO_CLIENT_SECRET";
-const client = new SecretsManagerClient({
-  region: "ap-southeast-2",
+const secretId = process.env.COGNITO_SECRET_ID || process.env.COGNITO_SECRET_ARN || "pinhaoyun/secret";
+const secretsClient = new SecretsManagerClient({
+  region: process.env.AWS_REGION || "ap-southeast-2",
 });
 
-let response;
+let cachedClientSecret: string | undefined;
 
-try {
-  response = await client.send(
-    new GetSecretValueCommand({
-      SecretId: secret_name,
-      VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
-    })
-  );
-} catch (error) {
-  // For a list of exceptions thrown, see
-  // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
-  throw error;
-}
+const resolveClientSecret = async () => {
+  if (cachedClientSecret) return cachedClientSecret;
+  if (process.env.COGNITO_CLIENT_SECRET) {
+    cachedClientSecret = process.env.COGNITO_CLIENT_SECRET;
+    return cachedClientSecret;
+  }
+  try {
+    const response = await secretsClient.send(
+      new GetSecretValueCommand({
+        SecretId: secretId,
+        VersionStage: "AWSCURRENT",
+      }),
+    );
+    const secretString = response.SecretString;
+    if (!secretString) return undefined;
+    try {
+      const parsed = JSON.parse(secretString);
+      cachedClientSecret = parsed.COGNITO_CLIENT_SECRET || secretString;
+    } catch {
+      cachedClientSecret = secretString;
+    }
+    return cachedClientSecret;
+  } catch (error) {
+    console.warn("[auth/resend-code] Failed to load secret", error);
+    return undefined;
+  }
+};
 
-const clientSecret = response.SecretString || process.env.COGNITO_CLIENT_SECRET;
-
-function secretHash(username: string) {
+async function secretHash(username: string) {
+  const clientSecret = await resolveClientSecret();
   if (!clientSecret) {
     throw new Error("服务器配置错误: COGNITO_CLIENT_SECRET 未定义");
   }
@@ -49,11 +63,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing email" }, { status: 400 });
     }
 
+    if (!region || !clientId) {
+      console.warn("[auth/resend-code] Missing env: COGNITO_REGION, COGNITO_CLIENT_ID");
+    }
+
     const client = new CognitoIdentityProviderClient({ region });
     const cmd = new ResendConfirmationCodeCommand({
       ClientId: clientId as string,
       Username: email,
-      SecretHash: secretHash(email),
+      SecretHash: await secretHash(email),
     });
     await client.send(cmd);
 
