@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
-const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
+const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const ALLOWED_EXT = ["mov", "mp4", "hevc", "m4v"];
 
 const originalBucket =
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     }
     if (size <= 0 || size > MAX_BYTES) {
       return NextResponse.json(
-        { error: "File too large (max 1GB)" },
+        { error: "File too large (max 2GB)" },
         { status: 400 },
       );
     }

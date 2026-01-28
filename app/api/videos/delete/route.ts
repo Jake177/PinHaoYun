@@ -6,7 +6,7 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
-const awsAccountId = process.env.ACCOUNT_ID || "883086653724";
+const awsAccountId = process.env.ACCOUNT_ID;
 const deleteQueueName = process.env.DELETE_QUEUE_NAME || "pinhaoyun_delete_video_sqs";
 
 const ddb = new DynamoDBClient({ region });

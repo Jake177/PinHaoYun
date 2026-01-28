@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback } from "react";
 
 const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/hevc"];
-const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
+const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const MAX_CONCURRENCY = 3; // Maximum concurrent uploads
 const HASH_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB - only hash first chunk for speed
 const PART_SIZE = 10 * 1024 * 1024; // 10MB multipart size
@@ -391,7 +391,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
       <div className="uploader__bar">
         <div>
           <h3>上传视频</h3>
-          <p className="muted">支持 MOV / MP4 / HEVC，单个文件不超过 1GB。最多同时上传 {MAX_CONCURRENCY} 个。</p>
+          <p className="muted">支持 MOV / MP4 / HEVC，单个文件不超过 2GB。最多同时上传 {MAX_CONCURRENCY} 个。</p>
         </div>
         <div className="uploader__actions">
           <button

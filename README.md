@@ -84,7 +84,7 @@ Open http://localhost:3000
 
 Some behaviour is controlled by hard-coded defaults in the app/Lambda code:
 
-- Max video size: 1GB (`MAX_BYTES` in uploader and API)
+- Max video size: 2GB (`MAX_BYTES` in uploader and API)
 - Allowed file types: MOV / MP4 / HEVC / M4V
 - Multipart part size: 10MB
 - Max concurrent uploads (client): 3

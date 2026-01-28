@@ -14,7 +14,7 @@ import {
 import crypto from "node:crypto";
 import { decodeIdToken } from "@/app/lib/jwt";
 
-const MAX_BYTES = 1024 * 1024 * 1024; // 1GB
+const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const ALLOWED_EXT = ["mov", "mp4", "hevc", "m4v"];
 
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     }
     if (sizeNumber <= 0 || sizeNumber > MAX_BYTES) {
       return NextResponse.json(
-        { error: "File too large (max 1GB)" },
+        { error: "File too large (max 2GB)" },
         { status: 400 },
       );
     }

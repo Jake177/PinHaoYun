@@ -11,7 +11,7 @@ import {
 
 const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-const secretId = process.env.COGNITO_SECRET_ID || process.env.COGNITO_SECRET_ARN || "pinhaoyun/secret";
+const secretId = process.env.COGNITO_SECRET_ID;
 const secretsClient = new SecretsManagerClient({
   region: process.env.AWS_REGION || "ap-southeast-2",
 });
