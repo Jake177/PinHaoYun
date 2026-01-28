@@ -12,7 +12,7 @@ const deleteQueueName = process.env.DELETE_QUEUE_NAME || "pinhaoyun_delete_video
 const ddb = new DynamoDBClient({ region });
 const sqs = new SQSClient({ region });
 
-// 构建 SQS URL，避免直接存储完整 URL 的环境变量问题
+// Build SQS URL to avoid relying on a full URL env var.
 function buildSqsUrl(queueName: string): string {
   return `https://sqs.${region}.amazonaws.com/${awsAccountId}/${queueName}`;
 }

@@ -5,7 +5,7 @@ type Rule = { id: string; label: string; passed: boolean };
 export default function PasswordRules({ checklist }: { checklist: Rule[] }) {
   return (
     <section className="policy-hint" aria-live="polite">
-      <p>密码策略：</p>
+      <p>Password rules:</p>
       <div className="password-rules">
         {checklist.map(({ id, label, passed }) => (
           <span key={id} data-passed={passed}>

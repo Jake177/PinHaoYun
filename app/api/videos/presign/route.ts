@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 快速重复校验：若已有相同哈希的视频，则直接返回 duplicate
+    // Fast duplicate check: if a matching hash already exists, return `duplicate` immediately.
     if (tableName && contentHash) {
       const existing = await ddb.send(
         new GetItemCommand({

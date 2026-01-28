@@ -8,7 +8,7 @@ type NavbarProps = {
 };
 
 export default function Navbar({ isAuthenticated, username }: NavbarProps) {
-  const ariaLabel = isAuthenticated ? "返回 PinHaoYun 控制台" : "返回登录页面";
+  const ariaLabel = isAuthenticated ? "Go to the PinHaoYun dashboard" : "Go to the sign-in page";
 
   return (
     <header className="site-header">

@@ -140,7 +140,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     });
     if (!resp.ok) {
       const data = (await resp.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error || "请求失败");
+      throw new Error(data.error || "Request failed.");
     }
     return (await resp.json()) as T;
   };
@@ -159,7 +159,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
       if (signal) {
         signal.addEventListener("abort", () => {
           xhr.abort();
-          reject(new Error("上传已取消"));
+          reject(new Error("Upload cancelled."));
         });
       }
 
@@ -172,15 +172,15 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
         if (xhr.status >= 200 && xhr.status < 300) {
           const etag = xhr.getResponseHeader("ETag")?.replace(/"/g, "");
           if (!etag) {
-            reject(new Error("缺少 ETag，请检查 S3 CORS 暴露 ETag 头"));
+            reject(new Error("Missing ETag. Ensure your S3 CORS configuration exposes the ETag header."));
             return;
           }
           resolve(etag);
         } else {
-          reject(new Error("上传失败"));
+          reject(new Error("Upload failed."));
         }
       };
-      xhr.onerror = () => reject(new Error("上传失败"));
+      xhr.onerror = () => reject(new Error("Upload failed."));
       xhr.send(part);
     });
 
@@ -196,7 +196,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     if (!extAllowed || file.size > MAX_BYTES) {
       updateItem(fileName, {
         status: "error",
-        message: "文件类型或大小不符合要求",
+        message: "Unsupported file type or file size is too large.",
       });
       return;
     }
@@ -207,12 +207,12 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     try {
       contentHash = await computeQuickHash(file);
     } catch {
-      updateItem(fileName, { status: "error", message: "校验失败" });
+      updateItem(fileName, { status: "error", message: "Failed to calculate checksum." });
       return;
     }
 
     if (signal?.aborted) {
-      updateItem(fileName, { status: "error", message: "已取消" });
+      updateItem(fileName, { status: "error", message: "Cancelled." });
       return;
     }
 
@@ -243,13 +243,13 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
         updateItem(fileName, {
           status: "skipped",
           progress: 100,
-          message: "已存在相同视频，跳过",
+          message: "Duplicate detected. Skipped.",
         });
         return;
       }
 
       if (!uploadId || !key || !bucket) {
-        throw new Error("初始化上传失败");
+        throw new Error("Failed to initialise upload.");
       }
 
       const totalParts = Math.max(1, Math.ceil(file.size / PART_SIZE));
@@ -258,7 +258,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
 
       for (let partNumber = 1; partNumber <= totalParts; partNumber += 1) {
         if (signal?.aborted) {
-          throw new Error("上传已取消");
+          throw new Error("Upload cancelled.");
         }
         const start = (partNumber - 1) * PART_SIZE;
         const end = Math.min(start + PART_SIZE, file.size);
@@ -320,9 +320,9 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
         }
       }
       if (err?.name === "AbortError" || signal?.aborted) {
-        updateItem(fileName, { status: "error", message: "已取消" });
+        updateItem(fileName, { status: "error", message: "Cancelled." });
       } else {
-        const message = err?.message || "上传失败";
+        const message = err?.message || "Upload failed.";
         updateItem(fileName, { status: "error", message });
       }
     }
@@ -390,8 +390,8 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
     <div className="uploader">
       <div className="uploader__bar">
         <div>
-          <h3>上传视频</h3>
-          <p className="muted">支持 MOV / MP4 / HEVC，单个文件不超过 2GB。最多同时上传 {MAX_CONCURRENCY} 个。</p>
+          <h3>Upload videos</h3>
+          <p className="muted">Supports MOV / MP4 / HEVC. Max 2GB per file. Uploads up to {MAX_CONCURRENCY} videos in parallel.</p>
         </div>
         <div className="uploader__actions">
           <button
@@ -400,7 +400,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
             disabled={busy}
             onClick={() => inputRef.current?.click()}
           >
-            {busy ? "上传中..." : "选择文件"}
+            {busy ? "Uploading..." : "Choose files"}
           </button>
           {busy && (
             <button
@@ -409,7 +409,7 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
               onClick={handleCancel}
               style={{ cursor: "pointer" }}
             >
-              取消上传
+              Cancel uploads
             </button>
           )}
         </div>
@@ -453,23 +453,23 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
                 </div>
                 <div className="muted" style={{ fontSize: "0.85rem" }}>
                   {item.status === "hashing"
-                    ? "校验中"
+                    ? "Hashing..."
                     : item.status === "uploading"
-                    ? `上传中 ${item.progress}%`
+                    ? `Uploading ${item.progress}%`
                     : item.status === "done"
-                    ? "完成"
+                    ? "Done"
                     : item.status === "skipped"
-                    ? item.message || "已跳过"
+                    ? item.message || "Skipped"
                     : item.status === "error"
-                    ? item.message || "失败"
-                    : "待上传"}
+                    ? item.message || "Failed"
+                    : "Pending"}
                 </div>
               </div>
               {item.status !== "uploading" && item.status !== "hashing" ? (
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label="关闭"
+                  aria-label="Remove"
                   onClick={() => removeItem(item.name)}
                 >
                   ✕

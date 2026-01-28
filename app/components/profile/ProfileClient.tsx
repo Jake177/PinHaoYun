@@ -39,7 +39,7 @@ export default function ProfileClient() {
     try {
       const resp = await fetch("/api/user/profile");
       if (!resp.ok) {
-        throw new Error("获取资料失败");
+        throw new Error("Failed to fetch profile.");
       }
       const data = (await resp.json()) as ProfileData;
       setProfile(data);
@@ -48,7 +48,7 @@ export default function ProfileClient() {
       setPreferredUsername(data.preferredUsername || "");
       setGender(data.gender || "");
     } catch (err: any) {
-      setError(err?.message || "加载失败");
+      setError(err?.message || "Failed to load.");
     } finally {
       setLoading(false);
     }
@@ -74,14 +74,14 @@ export default function ProfileClient() {
 
       if (!resp.ok) {
         const data = (await resp.json()) as { error?: string };
-        throw new Error(data.error || "保存失败");
+        throw new Error(data.error || "Save failed.");
       }
 
-      setSuccess("资料已更新");
+      setSuccess("Profile updated.");
       // Refresh profile to get updated data
       await fetchProfile();
     } catch (err: any) {
-      setError(err?.message || "保存失败");
+      setError(err?.message || "Save failed.");
     } finally {
       setSaving(false);
     }
@@ -91,7 +91,7 @@ export default function ProfileClient() {
     return (
       <div className="profile-page">
         <div className="profile-card">
-          <p className="muted">加载中...</p>
+          <p className="muted">Loading...</p>
         </div>
       </div>
     );
@@ -101,9 +101,9 @@ export default function ProfileClient() {
     <div className="profile-page">
       <div className="profile-header">
         <Link href="/dashboard" className="back-link">
-          ← 返回视频
+          ← Back to videos
         </Link>
-        <h1>个人资料</h1>
+        <h1>Profile</h1>
       </div>
 
       {error && <div className="auth-errors">{error}</div>}
@@ -112,7 +112,7 @@ export default function ProfileClient() {
       <div className="profile-grid">
         {/* Stats Card */}
         <div className="profile-card profile-card--stats">
-          <h2>存储统计</h2>
+          <h2>Storage</h2>
           <StorageRing
             usedBytes={profile?.usedBytes || 0}
             quotaBytes={profile?.quotaBytes || 256 * 1024 * 1024 * 1024}
@@ -122,17 +122,17 @@ export default function ProfileClient() {
           <div className="profile-stats">
             <div className="profile-stat">
               <span className="profile-stat__value">{profile?.videosCount || 0}</span>
-              <span className="profile-stat__label">视频数量</span>
+              <span className="profile-stat__label">Videos</span>
             </div>
           </div>
         </div>
 
         {/* Edit Card */}
         <div className="profile-card profile-card--form">
-          <h2>编辑资料</h2>
+          <h2>Edit profile</h2>
           <form onSubmit={handleSubmit}>
             <div className="field-group">
-              <label htmlFor="email">邮箱</label>
+              <label htmlFor="email">Email</label>
               <input
                 type="email"
                 id="email"
@@ -140,54 +140,54 @@ export default function ProfileClient() {
                 disabled
                 className="input--disabled"
               />
-              <span className="field-hint">邮箱不可修改</span>
+              <span className="field-hint">Email cannot be changed</span>
             </div>
 
             <div className="field-grid">
               <div className="field-group">
-                <label htmlFor="givenName">名字</label>
+                <label htmlFor="givenName">First name</label>
                 <input
                   type="text"
                   id="givenName"
                   value={givenName}
                   onChange={(e) => setGivenName(e.target.value)}
-                  placeholder="名"
+                  placeholder="First name"
                 />
               </div>
               <div className="field-group">
-                <label htmlFor="familyName">姓氏</label>
+                <label htmlFor="familyName">Surname</label>
                 <input
                   type="text"
                   id="familyName"
                   value={familyName}
                   onChange={(e) => setFamilyName(e.target.value)}
-                  placeholder="姓"
+                  placeholder="Surname"
                 />
               </div>
             </div>
 
             <div className="field-group">
-              <label htmlFor="preferredUsername">用户名</label>
+              <label htmlFor="preferredUsername">Username</label>
               <input
                 type="text"
                 id="preferredUsername"
                 value={preferredUsername}
                 onChange={(e) => setPreferredUsername(e.target.value)}
-                placeholder="你的昵称"
+                placeholder="Your display name"
               />
             </div>
 
             <div className="field-group">
-              <label htmlFor="gender">性别</label>
+              <label htmlFor="gender">Gender</label>
               <select
                 id="gender"
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
               >
-                <option value="">选择性别</option>
-                <option value="Male">男</option>
-                <option value="Female">女</option>
-                <option value="Other">其他</option>
+                <option value="">Select gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
               </select>
             </div>
 
@@ -196,7 +196,7 @@ export default function ProfileClient() {
               className="auth-submit"
               disabled={saving}
             >
-              {saving ? "保存中..." : "保存修改"}
+              {saving ? "Saving..." : "Save changes"}
             </button>
           </form>
         </div>

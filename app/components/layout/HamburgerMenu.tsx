@@ -72,19 +72,19 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
     {
       href: "/dashboard" as Route,
       icon: "home",
-      label: "我的视频",
+      label: "My videos",
       active: pathname === "/dashboard",
     },
     {
       href: "/dashboard/profile" as Route,
       icon: "account_circle",
-      label: "个人资料",
+      label: "Profile",
       active: pathname === "/dashboard/profile",
     },
     {
       href: "/dashboard/map" as Route,
       icon: "map_pin_heart",
-      label: "足迹地图",
+      label: "Footprint map",
       active: pathname === "/dashboard/map",
     },
   ];
@@ -96,7 +96,7 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
         className="hamburger-button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        aria-label="打开菜单"
+        aria-label="Open menu"
       >
         <span className={`hamburger-icon ${isOpen ? "hamburger-icon--open" : ""}`}>
           <span />
@@ -110,7 +110,7 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
           {username && (
             <div className="hamburger-dropdown__header">
               <span className="hamburger-dropdown__greeting">
-                你好，{username}
+                Hi, {username}
               </span>
             </div>
           )}
@@ -142,7 +142,7 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
               <span className="hamburger-dropdown__icon material-symbols-outlined">
                 exit_to_app
               </span>
-              <span>{logoutLoading ? "退出中..." : "退出登录"}</span>
+              <span>{logoutLoading ? "Signing out..." : "Sign out"}</span>
             </button>
           </div>
         </div>

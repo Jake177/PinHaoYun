@@ -50,7 +50,7 @@ const resolveClientSecret = async () => {
 async function secretHash(username: string) {
   const clientSecret = await resolveClientSecret();
   if (!clientSecret) {
-    throw new Error("服务器配置错误: COGNITO_CLIENT_SECRET 未定义");
+    throw new Error("Server configuration error: COGNITO_CLIENT_SECRET is not set");
   }
   const hmac = crypto.createHmac("sha256", clientSecret);
   hmac.update(username + clientId);
@@ -118,8 +118,8 @@ export async function POST(req: Request) {
     return res;
   } catch (err: any) {
     const msg = err?.name === "UserNotConfirmedException"
-      ? "账户未验证，请先完成邮箱验证码验证。"
-      : err?.message || "登录失败";
+      ? "Account not verified. Please complete email verification first."
+      : err?.message || "Sign-in failed";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 }

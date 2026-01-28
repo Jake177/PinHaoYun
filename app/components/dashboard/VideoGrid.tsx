@@ -68,7 +68,7 @@ const formatSize = (value?: number) => {
 const formatDate = (value?: string) => {
   if (!value) return "";
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("en-GB");
 };
 
 const formatDuration = (value?: number) => {
@@ -76,7 +76,7 @@ const formatDuration = (value?: number) => {
   const total = Math.max(0, Math.floor(value));
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
-  return minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
 
 const formatFps = (value?: number) => {
@@ -160,7 +160,7 @@ export default function VideoGrid({
   }, [hasMore, loadingMore, onLoadMore]);
 
   useEffect(() => {
-    // 每次切换预览，重置属性折叠状态
+    // Reset the metadata sheet state whenever the preview changes.
     setShowMeta(false);
     setShowDeleteConfirm(false);
     setShowLocationEditor(false);
@@ -325,12 +325,15 @@ export default function VideoGrid({
   }, [videos]);
 
   const renderLabel = (key: string) => {
-    if (key === "unknown") return "未知日期";
+    if (key === "unknown") return "Unknown date";
     const [y, m] = key.split("-");
-    return `${y}年${Number(m)}月`;
+    const monthIndex = Number(m) - 1;
+    if (!Number.isFinite(monthIndex) || monthIndex < 0 || monthIndex > 11) return key;
+    const date = new Date(Number(y), monthIndex, 1);
+    return date.toLocaleString("en-GB", { month: "long", year: "numeric" });
   };
 
-  // 重置属性开关
+  // Reset metadata sheet state.
   const handleClose = useCallback(() => {
     setPreview(null);
     setShowMeta(false);
@@ -372,7 +375,7 @@ export default function VideoGrid({
       await onDelete(preview);
       handleClose();
     } catch (err: any) {
-      setDeleteError(err?.message || "删除失败");
+      setDeleteError(err?.message || "Delete failed.");
     } finally {
       setDeleting(false);
     }
@@ -418,7 +421,7 @@ export default function VideoGrid({
       );
       setShowLocationEditor(false);
     } catch (err: any) {
-      setLocationError(err?.message || "保存失败");
+      setLocationError(err?.message || "Save failed.");
     } finally {
       setLocationSaving(false);
     }
@@ -428,7 +431,7 @@ export default function VideoGrid({
     <>
       {videos.length === 0 ? (
         <div className="empty-state">
-          <p>还没有上传视频，点击上方“上传视频”开始吧。</p>
+          <p>No videos yet. Use “Upload videos” above to get started.</p>
         </div>
       ) : (
         groups.map((group) => (
@@ -466,7 +469,7 @@ export default function VideoGrid({
                           event.stopPropagation();
                           handleSelect();
                         }}
-                        aria-label={isSelected ? "取消选择视频" : "选择视频"}
+                        aria-label={isSelected ? "Deselect video" : "Select video"}
                       >
                         <span className="material-symbols-outlined">
                           {isSelected ? "check_circle" : "radio_button_unchecked"}
@@ -483,7 +486,7 @@ export default function VideoGrid({
                           handlePreviewClick();
                         }
                       }}
-                      aria-label={isSelecting ? "选择视频" : "打开预览"}
+                      aria-label={isSelecting ? "Select video" : "Open preview"}
                     >
                       {previewUrl ? (
                         <>
@@ -497,7 +500,7 @@ export default function VideoGrid({
                           <span className="video-play">▶</span>
                         </>
                       ) : (
-                        <div className="thumb-fallback">暂无预览</div>
+                        <div className="thumb-fallback">No preview</div>
                       )}
                     </div>
                   </article>
@@ -512,17 +515,17 @@ export default function VideoGrid({
       {videos.length > 0 && (
         <div ref={sentinelRef} className="load-more-sentinel">
           {loadingMore ? (
-            <span className="pill">加载更多...</span>
+            <span className="pill">Loading more...</span>
           ) : hasMore ? (
             <button
               type="button"
               className="pill"
               onClick={onLoadMore}
             >
-              加载更多
+              Load more
             </button>
           ) : (
-            <span className="pill">已到底</span>
+            <span className="pill">End of list</span>
           )}
         </div>
       )}
@@ -540,14 +543,14 @@ export default function VideoGrid({
           >
             <header className="modal__header">
               <div>
-                <p className="muted">预览</p>
+                <p className="muted">Preview</p>
               </div>
               <button
                 type="button"
                 className="pill"
                 onClick={handleClose}
               >
-                关闭
+                Close
               </button>
             </header>
             {preview.originalUrl ? (
@@ -561,7 +564,7 @@ export default function VideoGrid({
                 className="preview-video"
               />
             ) : (
-              <div className="empty-state">暂无预览</div>
+              <div className="empty-state">No preview available</div>
             )}
             <div
               className={`metadata-toggle preview-actions ${
@@ -573,9 +576,9 @@ export default function VideoGrid({
                   type="button"
                   className="pill pill--icon"
                   onClick={toggleSheet}
-                  aria-label={showMeta ? "收起属性" : "查看属性"}
+                  aria-label={showMeta ? "Hide details" : "Show details"}
                   aria-pressed={showMeta}
-                  title={showMeta ? "收起属性" : "查看属性"}
+                  title={showMeta ? "Hide details" : "Show details"}
                 >
                   <span className="material-symbols-outlined">info</span>
                 </button>
@@ -584,8 +587,8 @@ export default function VideoGrid({
                   className="pill pill--icon"
                   onClick={handleEditLocation}
                   disabled={!onUpdateLocation}
-                  aria-label="编辑位置"
-                  title="编辑位置"
+                  aria-label="Edit location"
+                  title="Edit location"
                 >
                   <span className="material-symbols-outlined">map_search</span>
                 </button>
@@ -594,8 +597,8 @@ export default function VideoGrid({
                   className="pill pill--icon pill--danger"
                   onClick={handleDeleteClick}
                   disabled={deleting || !onDelete}
-                  aria-label={deleting ? "删除中..." : "删除"}
-                  title={deleting ? "删除中..." : "删除"}
+                  aria-label={deleting ? "Deleting..." : "Delete"}
+                  title={deleting ? "Deleting..." : "Delete"}
                 >
                   <span className="material-symbols-outlined">delete</span>
                 </button>
@@ -605,8 +608,8 @@ export default function VideoGrid({
                     href={preview.originalUrl}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label="下载"
-                    title="下载"
+                    aria-label="Download"
+                    title="Download"
                   >
                     <span className="material-symbols-outlined">download</span>
                   </a>
@@ -643,48 +646,48 @@ export default function VideoGrid({
                   onPointerMove={handleSheetPointerMove}
                   onPointerUp={handleSheetPointerUp}
                   onPointerCancel={handleSheetPointerCancel}
-                  aria-label="切换属性高度"
+                  aria-label="Toggle sheet height"
                 >
                   <span />
                 </button>
-                <span className="metadata-sheet__title">属性</span>
+                <span className="metadata-sheet__title">Details</span>
                 <button
                   type="button"
                   className="metadata-sheet__close"
                   onClick={closeSheet}
-                  aria-label="关闭属性"
+                  aria-label="Close details"
                 >
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
               <ul>
-                <li>拍摄时间：{formatDate(preview.captureTime || preview.createdAt) || "未知"}</li>
-                <li>文件大小：{formatSize(preview.size)}</li>
-                <li>时长：{formatDuration(preview.durationSec) || "未知"}</li>
+                <li>Captured: {formatDate(preview.captureTime || preview.createdAt) || "Unknown"}</li>
+                <li>File size: {formatSize(preview.size)}</li>
+                <li>Duration: {formatDuration(preview.durationSec) || "Unknown"}</li>
                 <li>
-                  分辨率：
+                  Resolution:
                   {preview.width && preview.height
                     ? `${preview.width} × ${preview.height}`
-                    : "未知"}
+                    : "Unknown"}
                 </li>
-                <li>帧率：{formatFps(preview.fps) || "未知"}</li>
-                <li>编码：{preview.codec || "未知"}</li>
-                <li>码率：{formatBitrate(preview.bitrate) || "未知"}</li>
+                <li>Frame rate: {formatFps(preview.fps) || "Unknown"}</li>
+                <li>Codec: {preview.codec || "Unknown"}</li>
+                <li>Bitrate: {formatBitrate(preview.bitrate) || "Unknown"}</li>
                 <li>
-                  设备：
+                  Device:
                   {preview.deviceMake || preview.deviceModel
                     ? `${preview.deviceMake || ""} ${preview.deviceModel || ""}`.trim()
-                    : "未知"}
+                    : "Unknown"}
                 </li>
                 <li>
-                  软件版本：{preview.deviceSoftware || "未知"}
+                  Software: {preview.deviceSoftware || "Unknown"}
                 </li>
                 <li>
-                  拍摄地点：
+                  Location:
                   {preview.captureAddress ||
                     (preview.captureLat != null && preview.captureLon != null
                       ? `${preview.captureLat}, ${preview.captureLon}`
-                      : "未知")}
+                      : "Unknown")}
                 </li>
               </ul>
             </div>
@@ -702,8 +705,8 @@ export default function VideoGrid({
             className="confirm-dialog"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="confirm-dialog__title">确认删除</h3>
-            <p className="confirm-dialog__text">删除后无法恢复。</p>
+            <h3 className="confirm-dialog__title">Confirm deletion</h3>
+            <p className="confirm-dialog__text">This cannot be undone.</p>
             {deleteError ? (
               <p className="pill pill--error">{deleteError}</p>
             ) : null}
@@ -714,7 +717,7 @@ export default function VideoGrid({
                 onClick={handleCancelDelete}
                 disabled={deleting}
               >
-                取消
+                Cancel
               </button>
               <button
                 type="button"
@@ -722,7 +725,7 @@ export default function VideoGrid({
                 onClick={handleConfirmDelete}
                 disabled={deleting}
               >
-                {deleting ? "删除中..." : "确认删除"}
+                {deleting ? "Deleting..." : "Confirm"}
               </button>
             </div>
           </div>

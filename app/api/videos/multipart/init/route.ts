@@ -166,7 +166,7 @@ export async function POST(request: Request) {
 
     if (usedBytes + reservedBytes + sizeNumber > quotaBytes + GRACE_BYTES) {
       return NextResponse.json(
-        { error: "存储空间不足" },
+        { error: "Insufficient storage space." },
         { status: 403 },
       );
     }
@@ -277,7 +277,7 @@ export async function POST(request: Request) {
         // ignore abort failure
       }
       return NextResponse.json(
-        { error: "存储空间不足" },
+        { error: "Insufficient storage space." },
         { status: 403 },
       );
     }

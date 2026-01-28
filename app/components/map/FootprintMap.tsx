@@ -172,8 +172,8 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
             <div class="map-popup">
               ${props?.thumbnailUrl ? `<img src="${props.thumbnailUrl}" alt="${props?.originalName || 'Video'}" />` : ""}
               <div class="map-popup__info">
-                <p class="map-popup__name">${props?.originalName || "未命名视频"}</p>
-                ${props?.captureTime ? `<p class="map-popup__time">${new Date(props.captureTime).toLocaleDateString()}</p>` : ""}
+                <p class="map-popup__name">${props?.originalName || "Untitled video"}</p>
+                ${props?.captureTime ? `<p class="map-popup__time">${new Date(props.captureTime).toLocaleDateString("en-GB")}</p>` : ""}
               </div>
             </div>
           `;
@@ -218,13 +218,13 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
       try {
         const resp = await fetch("/api/videos/locations");
         if (!resp.ok) {
-          throw new Error("获取位置数据失败");
+          throw new Error("Failed to fetch location data.");
         }
         const data = await resp.json();
         setTotalCount(data.totalCount || 0);
         initializeMap(data.geojson);
       } catch (err: any) {
-        setError(err?.message || "加载失败");
+        setError(err?.message || "Failed to load.");
       } finally {
         setLoading(false);
       }
@@ -243,7 +243,7 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
   if (!MAPBOX_TOKEN) {
     return (
       <div className="map-error">
-        <p>地图配置错误：缺少 Mapbox Token</p>
+        <p>Map configuration error: missing Mapbox token.</p>
       </div>
     );
   }
@@ -252,7 +252,7 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
     <div className="footprint-map">
       {loading && (
         <div className="map-loading">
-          <p>加载地图中...</p>
+          <p>Loading map...</p>
         </div>
       )}
       {error && (
@@ -262,8 +262,8 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
       )}
       {!loading && !error && totalCount === 0 && (
         <div className="map-empty">
-          <p>暂无带有位置信息的视频</p>
-          <p className="muted">上传包含 GPS 信息的视频后，它们会显示在地图上</p>
+          <p>No videos with location data yet.</p>
+          <p className="muted">Upload a video with GPS metadata and it will appear on the map.</p>
         </div>
       )}
       <div
@@ -273,7 +273,7 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
       />
       {!loading && totalCount > 0 && (
         <div className="map-stats">
-          <span className="pill">{totalCount} 个位置</span>
+          <span className="pill">{totalCount} locations</span>
         </div>
       )}
     </div>

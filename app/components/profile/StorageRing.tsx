@@ -79,7 +79,7 @@ export default function StorageRing({
         <div className="storage-ring__percentage" style={{ color: strokeColor }}>
           {percentage.toFixed(1)}%
         </div>
-        <div className="storage-ring__label">已使用</div>
+        <div className="storage-ring__label">Used</div>
       </div>
       <div className="storage-ring__details">
         <span className="storage-ring__used">{formatBytes(usedBytes)}</span>

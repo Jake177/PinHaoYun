@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
       query,
-    )}.json?access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=6&language=zh-Hans&types=address,place,locality,neighborhood`;
+    )}.json?access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=6&language=en&types=address,place,locality,neighborhood`;
 
     const resp = await fetch(url, { cache: "no-store" });
     if (!resp.ok) {

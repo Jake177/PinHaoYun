@@ -91,6 +91,10 @@ export const signInUser = (payload: SignInPayload) =>
       onSuccess: (session) => resolve({ session, user: cognitoUser }),
       onFailure: (error) => reject(error),
       newPasswordRequired: () =>
-        reject(new Error("该账号需要管理员设置临时密码后首次登录修改密码。")),
+        reject(
+          new Error(
+            "This account requires an administrator-set temporary password before first sign-in.",
+          ),
+        ),
     });
   });

@@ -18,23 +18,23 @@ const EMPTY_FORM: RegistrationFormState = {
 };
 
 const PASSWORD_RULES = [
-  { id: "length", label: "至少 8 个字符", test: (value: string) => value.length >= 8 },
-  { id: "upper", label: "至少 1 个大写字母", test: (value: string) => /[A-Z]/.test(value) },
-  { id: "lower", label: "至少 1 个小写字母", test: (value: string) => /[a-z]/.test(value) },
-  { id: "digit", label: "至少 1 个数字", test: (value: string) => /\d/.test(value) },
-  { id: "symbol", label: "至少 1 个特殊字符", test: (value: string) => /[^A-Za-z0-9]/.test(value) },
+  { id: "length", label: "At least 8 characters", test: (value: string) => value.length >= 8 },
+  { id: "upper", label: "At least 1 upper-case letter", test: (value: string) => /[A-Z]/.test(value) },
+  { id: "lower", label: "At least 1 lower-case letter", test: (value: string) => /[a-z]/.test(value) },
+  { id: "digit", label: "At least 1 number", test: (value: string) => /\d/.test(value) },
+  { id: "symbol", label: "At least 1 special character", test: (value: string) => /[^A-Za-z0-9]/.test(value) },
 ];
 
 const GENDER_OPTIONS = [
-  { value: "Male", label: "男" },
-  { value: "Female", label: "女" },
-  { value: "Other", label: "其他 / 不透露" },
+  { value: "Male", label: "Male" },
+  { value: "Female", label: "Female" },
+  { value: "Other", label: "Other / Prefer not to say" },
 ] as const;
 
 const describeError = (error: unknown) =>
   error instanceof Error && error.message
     ? error.message
-    : "请求失败，请稍后再试。";
+    : "Request failed. Please try again.";
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -55,23 +55,23 @@ export default function RegisterForm() {
   const validate = (): string[] => {
     const issues: string[] = [];
     if (!formState.givenName.trim()) {
-      issues.push("请输入名字。");
+      issues.push("Please enter your first name.");
     }
     if (!formState.familyName.trim()) {
-      issues.push("请输入姓氏。");
+      issues.push("Please enter your surname.");
     }
     if (!formState.preferredUsername.trim()) {
-      issues.push("请输入用户名。");
+      issues.push("Please choose a username.");
     }
     if (!formState.email.trim()) {
-      issues.push("请输入邮箱。");
+      issues.push("Please enter your email.");
     }
     if (formState.password !== formState.confirmPassword) {
-      issues.push("两次输入的密码不一致。");
+      issues.push("Passwords do not match.");
     }
     const failedRules = passwordChecklist.filter((item) => !item.passed);
     if (failedRules.length > 0) {
-      issues.push("密码未满足所有复杂度要求。");
+      issues.push("Your password doesn't meet all complexity requirements.");
     }
     return issues;
   };
@@ -104,7 +104,7 @@ export default function RegisterForm() {
       });
 
       if (!resp.ok) {
-        let message = "注册失败";
+        let message = "Sign-up failed.";
         try {
           const data = (await resp.json()) as { error?: string };
           if (data?.error) message = data.error;
@@ -139,7 +139,7 @@ export default function RegisterForm() {
       
       <form onSubmit={handleSubmit} noValidate>
         <div className="field-group">
-          <label htmlFor="email">邮箱</label>
+          <label htmlFor="email">Email</label>
           <input
             id="email"
             name="email"
@@ -164,12 +164,12 @@ export default function RegisterForm() {
         />
 
         <div className="field-group">
-          <label htmlFor="password">密码</label>
+          <label htmlFor="password">Password</label>
           <input
             id="password"
             name="password"
             type="password"
-            placeholder="符合复杂度要求的密码"
+            placeholder="A strong password"
             autoComplete="new-password"
             value={formState.password}
             onChange={handleChange}
@@ -178,12 +178,12 @@ export default function RegisterForm() {
         </div>
 
         <div className="field-group">
-          <label htmlFor="confirmPassword">确认密码</label>
+          <label htmlFor="confirmPassword">Confirm password</label>
           <input
             id="confirmPassword"
             name="confirmPassword"
             type="password"
-            placeholder="再次输入密码"
+            placeholder="Re-enter your password"
             autoComplete="new-password"
             value={formState.confirmPassword}
             onChange={handleChange}
@@ -193,7 +193,7 @@ export default function RegisterForm() {
         <PasswordRules checklist={passwordChecklist} />
 
         <button type="submit" className="auth-submit" disabled={loading}>
-          {loading ? "处理中..." : "创建账号"}
+          {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
     </>

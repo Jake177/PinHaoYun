@@ -10,7 +10,7 @@ const FootprintMap = dynamic(
     ssr: false,
     loading: () => (
       <div className="map-loading">
-        <p>加载地图组件中...</p>
+        <p>Loading the map...</p>
       </div>
     ),
   }
@@ -26,10 +26,10 @@ export default function MapClient() {
     <div className="map-page">
       <div className="map-page__header">
         <Link href="/dashboard" className="back-link">
-          ← 返回视频
+          ← Back to videos
         </Link>
-        <h1>足迹地图</h1>
-        <p className="muted">查看你的视频拍摄地点</p>
+        <h1>Footprint map</h1>
+        <p className="muted">See where your videos were captured</p>
       </div>
       <div className="map-page__content">
         <FootprintMap onVideoSelect={handleVideoSelect} />

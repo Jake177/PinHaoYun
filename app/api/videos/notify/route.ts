@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     }
 
     try {
-      // 写哈希锁 + 视频记录 + Profile 统计（原子事务）
+      // Hash lock + video record + profile counters (atomic transaction).
       await ddb.send(
         new TransactWriteItemsCommand({
           TransactItems: [

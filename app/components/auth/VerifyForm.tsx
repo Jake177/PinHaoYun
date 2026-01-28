@@ -14,7 +14,7 @@ type VerifyFormProps = {
 const describeError = (error: unknown) =>
   error instanceof Error && error.message
     ? error.message
-    : "请求失败，请稍后再试。";
+    : "Request failed. Please try again.";
 
 export default function VerifyForm({
   defaultEmail = "",
@@ -76,7 +76,7 @@ export default function VerifyForm({
     setFeedback(null);
 
     if (!normalizedEmail || codeValue.length !== 6) {
-      setErrors(["请填写邮箱和验证码。"]);
+      setErrors(["Please enter your email and the 6-digit verification code."]);
       return;
     }
 
@@ -93,7 +93,7 @@ export default function VerifyForm({
       });
 
       if (!resp.ok) {
-        let message = "验证失败";
+        let message = "Verification failed.";
         try {
           const data = (await resp.json()) as { error?: string };
           if (data?.error) message = data.error;
@@ -120,7 +120,7 @@ export default function VerifyForm({
 
   const handleResend = async () => {
     if (!normalizedEmail) {
-      setErrors(["请先填写注册时使用的邮箱。"]);
+      setErrors(["Please enter the email address you used to sign up."]);
       return;
     }
 
@@ -135,7 +135,7 @@ export default function VerifyForm({
         body: JSON.stringify({ email: normalizedEmail }),
       });
       if (!resp.ok) {
-        let message = "验证码发送失败";
+        let message = "Failed to send verification code.";
         try {
           const data = (await resp.json()) as { error?: string };
           if (data?.error) message = data.error;
@@ -146,7 +146,7 @@ export default function VerifyForm({
         return;
       }
 
-      setFeedback("验证码已重新发送，请查收邮箱。");
+      setFeedback("A new verification code has been sent. Please check your email.");
     } catch (error) {
       setErrors([describeError(error)]);
     } finally {
@@ -160,65 +160,65 @@ export default function VerifyForm({
       <Feedback message={feedback} />
       <form onSubmit={handleSubmit} noValidate>
         <div className="field-group">
-          <label htmlFor="email">邮箱</label>
+          <label htmlFor="email">Email</label>
           <input
             id="email"
             name="email"
             type="email"
-          placeholder="注册时使用的邮箱"
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-      </div>
-
-      <div className="field-group">
-        <label htmlFor="code">邮箱验证码</label>
-        <div className="otp-grid" aria-label="6位验证码输入">
-          {otp.map((digit, idx) => (
-            <input
-              key={idx}
-              ref={(el) => {
-                inputs[idx].current = el;
-              }}
-              type="text"
-              inputMode="numeric"
-              maxLength={1}
-              className="otp-box"
-              value={digit}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, "").slice(-1);
-                updateOtp(idx, val);
-                if (val) focusNext(idx);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Backspace" && !otp[idx]) {
-                  updateOtp(idx, "");
-                  focusPrev(idx);
-                } else if (e.key === "ArrowLeft") {
-                  focusPrev(idx);
-                } else if (e.key === "ArrowRight") {
-                  focusNext(idx);
-                }
-              }}
-              required
-              aria-label={`验证码第 ${idx + 1} 位`}
-            />
-          ))}
+            placeholder="Email used during registration"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
         </div>
-        <button
-          type="button"
-          className="link-button"
-          onClick={handleResend}
-          disabled={resending}
-        >
-            {resending ? "发送中..." : "重新发送验证码"}
+
+        <div className="field-group">
+          <label htmlFor="code">Verification code</label>
+          <div className="otp-grid" aria-label="6-digit code input">
+            {otp.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={(el) => {
+                  inputs[idx].current = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                maxLength={1}
+                className="otp-box"
+                value={digit}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "").slice(-1);
+                  updateOtp(idx, val);
+                  if (val) focusNext(idx);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Backspace" && !otp[idx]) {
+                    updateOtp(idx, "");
+                    focusPrev(idx);
+                  } else if (e.key === "ArrowLeft") {
+                    focusPrev(idx);
+                  } else if (e.key === "ArrowRight") {
+                    focusNext(idx);
+                  }
+                }}
+                required
+                aria-label={`Code digit ${idx + 1}`}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            className="link-button"
+            onClick={handleResend}
+            disabled={resending}
+          >
+            {resending ? "Sending..." : "Resend code"}
           </button>
         </div>
 
         <button type="submit" className="auth-submit" disabled={loading}>
-          {loading ? "处理中..." : "提交验证码"}
+          {loading ? "Verifying..." : "Verify"}
         </button>
       </form>
     </>

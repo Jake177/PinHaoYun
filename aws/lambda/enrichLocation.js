@@ -16,7 +16,7 @@ const extractContext = (feature, prefix) =>
   feature?.context?.find((item) => String(item.id || "").startsWith(prefix))?.text;
 
 const reverseGeocode = async (lat, lon) => {
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1&language=zh-Hans&types=address,place,locality,neighborhood`;
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1&language=en&types=address,place,locality,neighborhood`;
   const resp = await fetch(url);
   if (!resp.ok) {
     throw new Error(`Mapbox reverse geocode failed: ${resp.status}`);

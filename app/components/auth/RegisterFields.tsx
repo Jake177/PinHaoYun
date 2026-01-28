@@ -23,12 +23,12 @@ export default function RegisterFields({
     <>
       <div className="field-grid">
         <div className="field-group">
-          <label htmlFor="givenName">名字</label>
+          <label htmlFor="givenName">First name</label>
           <input
             id="givenName"
             name="givenName"
             type="text"
-            placeholder="例如：Hao Yun"
+            placeholder="e.g. Hao Yun"
             autoComplete="given-name"
             value={formState.givenName}
             onChange={onChange}
@@ -36,12 +36,12 @@ export default function RegisterFields({
           />
         </div>
         <div className="field-group">
-          <label htmlFor="familyName">姓氏</label>
+          <label htmlFor="familyName">Surname</label>
           <input
             id="familyName"
             name="familyName"
             type="text"
-            placeholder="例如：Pin"
+            placeholder="e.g. Pin"
             autoComplete="family-name"
             value={formState.familyName}
             onChange={onChange}
@@ -51,12 +51,12 @@ export default function RegisterFields({
       </div>
 
       <div className="field-group">
-        <label htmlFor="preferredUsername">用户名</label>
+        <label htmlFor="preferredUsername">Username</label>
         <input
           id="preferredUsername"
           name="preferredUsername"
           type="text"
-          placeholder="对外展示的唯一名称"
+          placeholder="Your public display name"
           autoComplete="username"
           value={formState.preferredUsername}
           onChange={onChange}
@@ -65,7 +65,7 @@ export default function RegisterFields({
       </div>
 
       <div className="field-group">
-        <label htmlFor="gender">性别</label>
+        <label htmlFor="gender">Gender</label>
         <select
           id="gender"
           name="gender"

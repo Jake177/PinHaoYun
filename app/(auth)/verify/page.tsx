@@ -13,18 +13,18 @@ const getParam = (params: SearchParams, key: string) => {
 const statusMessage = (status: string | undefined) => {
   switch (status) {
     case "registered":
-      return "注册成功，验证码已发送到邮箱，请输入验证码完成激活。";
+      return "Registration successful. We've sent a verification code to your email. Enter it to activate your account.";
     case "unconfirmed":
-      return "该账户尚未验证，请输入验证码完成激活。";
+      return "This account hasn't been verified yet. Enter the verification code to activate it.";
     case "resent":
-      return "验证码已重新发送，请查收邮箱。";
+      return "A new verification code has been sent. Please check your email.";
     default:
-      return "请输入邮箱与验证码完成账户激活。";
+      return "Enter your email and verification code to activate your account.";
   }
 };
 
 export const metadata: Metadata = {
-  title: "验证账户 | PinHaoYun",
+  title: "Verify account | PinHaoYun",
 };
 
 export default async function VerifyPage({
@@ -45,8 +45,8 @@ export default async function VerifyPage({
   return (
     <>
       <AuthHeading
-        title="验证邮箱"
-        description="我们已向你的邮箱发送验证码，请填写验证码完成激活。"
+        title="Verify your email"
+        description="We've sent a verification code to your email. Enter it below to finish activation."
       />
       <VerifyForm
         defaultEmail={email}
@@ -54,7 +54,7 @@ export default async function VerifyPage({
         redirectTo={redirectTo}
       />
       <p className="auth-helper">
-        已经验证成功？<Link href="/login">返回登录</Link>
+        Already verified? <Link href="/login">Sign in</Link>
       </p>
     </>
   );

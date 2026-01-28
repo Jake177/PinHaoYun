@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
     }
 
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1&language=zh-Hans&types=address,place,locality,neighborhood`;
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1&language=en&types=address,place,locality,neighborhood`;
     const resp = await fetch(url, { cache: "no-store" });
     if (!resp.ok) {
       return NextResponse.json(

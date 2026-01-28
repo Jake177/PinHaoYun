@@ -15,12 +15,19 @@ type LoginFormProps = {
 const describeError = (error: unknown) =>
   error instanceof Error && error.message
     ? error.message
-    : "请求失败，请稍后再试。";
+    : "Request failed. Please try again.";
 
-const isUnconfirmedError = (message: string) =>
-  ["未验证", "未确认", "NotConfirmed", "UserNotConfirmed"].some((keyword) =>
-    message.includes(keyword),
-  );
+const isUnconfirmedError = (message: string) => {
+  const haystack = message.toLowerCase();
+  return [
+    "not verified",
+    "not confirmed",
+    "unconfirmed",
+    "usernotconfirmed",
+    "notconfirmed",
+    "user not confirmed",
+  ].some((keyword) => haystack.includes(keyword));
+};
 
 export default function LoginForm({
   defaultEmail = "",
@@ -54,7 +61,7 @@ export default function LoginForm({
     setLoading(true);
 
     if (!normalizedEmail || !password) {
-      setErrors(["请填写邮箱和密码。"]);
+      setErrors(["Please enter your email and password."]);
       setLoading(false);
       return;
     }
@@ -73,7 +80,7 @@ export default function LoginForm({
       });
 
       if (!resp.ok) {
-        let message = "登录失败";
+        let message = "Sign-in failed.";
         try {
           const data = (await resp.json()) as { error?: string };
           if (data?.error) message = data.error;
@@ -119,7 +126,7 @@ export default function LoginForm({
       <Feedback message={feedback} />
       <form onSubmit={handleSubmit} noValidate>
         <div className="field-group">
-          <label htmlFor="email">邮箱</label>
+          <label htmlFor="email">Email</label>
           <input
             id="email"
             name="email"
@@ -133,12 +140,12 @@ export default function LoginForm({
         </div>
 
         <div className="field-group">
-          <label htmlFor="password">密码</label>
+          <label htmlFor="password">Password</label>
           <input
             id="password"
             name="password"
             type="password"
-            placeholder="请输入密码"
+            placeholder="Enter your password"
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -147,7 +154,7 @@ export default function LoginForm({
         </div>
 
         <button type="submit" className="auth-submit" disabled={loading}>
-          {loading ? "处理中..." : "登录"}
+          {loading ? "Signing in..." : "Sign in"}
         </button>
       </form>
     </>

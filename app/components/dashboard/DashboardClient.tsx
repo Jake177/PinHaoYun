@@ -67,7 +67,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   } | null>(null);
 
   const greeting = useMemo(
-    () => (username ? `欢迎，${username}` : "欢迎回来"),
+    () => (username ? `Welcome, ${username}` : "Welcome back"),
     [username],
   );
 
@@ -102,7 +102,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       const resp = await fetch(`/api/videos/list?${params.toString()}`);
       if (!resp.ok) {
         const data = (await resp.json()) as { error?: string };
-        throw new Error(data.error || "加载视频失败");
+        throw new Error(data.error || "Failed to load videos.");
       }
 
       const data = (await resp.json()) as {
@@ -130,7 +130,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       setNextCursor(newCursor);
       setHasMore(data.hasMore ?? false);
     } catch (err: any) {
-      setError(err?.message || "加载视频失败");
+      setError(err?.message || "Failed to load videos.");
     } finally {
       if (reset) {
         setLoading(false);
@@ -147,7 +147,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     }
   }, [fetchVideos, hasMore]);
 
-  // 初次加载 + 筛选条件变化时重新获取
+  // Initial load and refresh when filter changes.
   useEffect(() => {
     fetchVideos(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,7 +174,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     await Promise.all([fetchVideos(true), fetchProfile()]);
   }, [fetchProfile, fetchVideos]);
 
-  // 获取用户存储统计
+  // Fetch user storage stats.
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
@@ -188,7 +188,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       });
       if (!resp.ok) {
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || "删除失败");
+        throw new Error(data.error || "Delete failed.");
       }
       await fetchVideos(true);
       await fetchProfile();
@@ -242,13 +242,13 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       });
       if (!resp.ok) {
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || "删除失败");
+        throw new Error(data.error || "Deletion failed");
       }
       resetSelection();
     } catch (err: any) {
       setVideos(previousVideos);
       if (previousStats) setProfileStats(previousStats);
-      setBatchError(err?.message || "删除失败");
+      setBatchError(err?.message || "Deletion failed");
     } finally {
       setBatchDeleting(false);
     }
@@ -273,7 +273,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       });
       if (!resp.ok) {
         const err = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error || "保存位置失败");
+        throw new Error(err.error || "Failed to save location.");
       }
       await fetchVideos(true);
     },
@@ -313,7 +313,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 strokeWidth={5}
               />
               <div className="dashboard-stats__text">
-                <span className="dashboard-stats__label">存储空间</span>
+                <span className="dashboard-stats__label">Storage</span>
                 <span className="dashboard-stats__value">
                   {formatBytes(profileStats.usedBytes)} / {formatBytes(profileStats.quotaBytes)}
                 </span>
@@ -325,8 +325,8 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 video_camera_front
               </span>
               <div className="dashboard-stats__text">
-                <span className="dashboard-stats__label">视频数量</span>
-                <span className="dashboard-stats__value">{profileStats.videosCount} 个</span>
+                <span className="dashboard-stats__label">Videos</span>
+                <span className="dashboard-stats__value">{profileStats.videosCount}</span>
               </div>
             </div>
           </div>
@@ -334,9 +334,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       </header>
 
       <section className="dashboard-panel">
-        <div className="panel-heading">
+          <div className="panel-heading">
           <div className="panel-title">
-            <h2>我的视频</h2>
+            <h2>My videos</h2>
             <div className="panel-filters">
               <select
                 className="input"
@@ -346,12 +346,12 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                   setFilterMonth("");
                   resetSelection();
                 }}
-                aria-label="按年份筛选"
+                aria-label="Filter by year"
               >
-                <option value="">全部年份</option>
+                <option value="">All years</option>
                 {yearOptions.map((y) => (
                   <option key={y} value={y}>
-                    {y}年
+                    {y}
                   </option>
                 ))}
               </select>
@@ -362,14 +362,14 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                   setFilterMonth(e.target.value);
                   resetSelection();
                 }}
-                aria-label="按月份筛选"
+                aria-label="Filter by month"
                 disabled={!filterYear}
               >
-                <option value="">全部月份</option>
+                <option value="">All months</option>
                 {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map(
                   (m) => (
                     <option key={m} value={m}>
-                      {Number(m)}月
+                      {new Date(2000, Number(m) - 1, 1).toLocaleString("en-GB", { month: "long" })}
                     </option>
                   ),
                 )}
@@ -385,7 +385,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                   onClick={() => setShowBatchConfirm(true)}
                   disabled={selectedIds.size === 0 || batchDeleting}
                 >
-                  {batchDeleting ? "删除中..." : "删除"}
+                  {batchDeleting ? "Deleting..." : "Delete"}
                 </button>
                 <button
                   type="button"
@@ -393,7 +393,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                   onClick={resetSelection}
                   disabled={batchDeleting}
                 >
-                  取消
+                  Cancel
                 </button>
               </>
             ) : (
@@ -408,7 +408,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 }}
                 disabled={videos.length === 0}
               >
-                选择
+                Select
               </button>
             )}
             <button
@@ -419,8 +419,8 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 void refreshAll();
               }}
               disabled={loading}
-              aria-label="刷新视频列表"
-              title="刷新"
+              aria-label="Refresh video list"
+              title="Refresh"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -442,8 +442,8 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             </button>
           </div>
           <div className="panel-status">
-            {loading ? <span className="pill">加载中...</span> : null}
-            {loadingMore ? <span className="pill">加载更多...</span> : null}
+            {loading ? <span className="pill">Loading...</span> : null}
+            {loadingMore ? <span className="pill">Loading more...</span> : null}
             {error ? <span className="pill pill--error">{error}</span> : null}
             {batchError ? <span className="pill pill--error">{batchError}</span> : null}
           </div>
@@ -474,9 +474,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             className="confirm-dialog"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="confirm-dialog__title">确认删除</h3>
+            <h3 className="confirm-dialog__title">Confirm deletion</h3>
             <p className="confirm-dialog__text">
-              确认删除 {selectedIds.size} 个视频？
+              Delete {selectedIds.size} video{selectedIds.size === 1 ? "" : "s"}?
             </p>
             {batchError ? (
               <p className="pill pill--error">{batchError}</p>
@@ -488,7 +488,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 onClick={() => setShowBatchConfirm(false)}
                 disabled={batchDeleting}
               >
-                取消
+                Cancel
               </button>
               <button
                 type="button"
@@ -496,7 +496,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 onClick={handleBatchDelete}
                 disabled={batchDeleting || selectedIds.size === 0}
               >
-                {batchDeleting ? "删除中..." : "确认删除"}
+                {batchDeleting ? "Deleting..." : "Confirm"}
               </button>
             </div>
           </div>

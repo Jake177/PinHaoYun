@@ -105,12 +105,12 @@ export default function LocationEditorModal({
       const resp = await fetch(`/api/geo/search?query=${encodeURIComponent(trimmed)}`);
       if (!resp.ok) {
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || "搜索失败");
+        throw new Error(data.error || "Search failed.");
       }
       const data = (await resp.json()) as { results?: GeoResult[] };
       setResults(data.results || []);
     } catch (err: any) {
-      setLocalError(err?.message || "搜索失败");
+      setLocalError(err?.message || "Search failed.");
     } finally {
       setSearching(false);
     }
@@ -132,7 +132,7 @@ export default function LocationEditorModal({
 
   const handleSave = () => {
     if (!draft.address.trim()) {
-      setLocalError("请先搜索或在地图上选择位置");
+      setLocalError("Please search or choose a location on the map first.");
       return;
     }
     onSave(draft);
@@ -182,19 +182,19 @@ export default function LocationEditorModal({
     <div className="location-modal" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="location-dialog" onClick={(e) => e.stopPropagation()}>
         <header className="location-dialog__header">
-          <h3>编辑位置</h3>
+          <h3>Edit location</h3>
           <button type="button" className="pill" onClick={onClose}>
-            关闭
+            Close
           </button>
         </header>
         {!hasToken ? (
-          <p className="pill pill--error">缺少 Mapbox Token</p>
+          <p className="pill pill--error">Missing Mapbox token.</p>
         ) : (
           <div className="location-dialog__body">
             <div className="location-search">
               <input
                 className="input"
-                placeholder="搜索地址或城市"
+                placeholder="Search for an address or place"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -207,7 +207,7 @@ export default function LocationEditorModal({
                 onClick={handleSearch}
                 disabled={searching}
               >
-                {searching ? "搜索中..." : "搜索"}
+                {searching ? "Searching..." : "Search"}
               </button>
             </div>
             {results.length > 0 && (
@@ -227,7 +227,7 @@ export default function LocationEditorModal({
             <div className="location-map" ref={mapContainer} />
             <div className="location-fields">
               <label className="location-field">
-                地址
+                Address
                 <input
                   className="input"
                   value={draft.address}
@@ -235,8 +235,8 @@ export default function LocationEditorModal({
                 />
               </label>
               <div className="location-meta">
-                <span>经度：{draft.lon.toFixed(5)}</span>
-                <span>纬度：{draft.lat.toFixed(5)}</span>
+                <span>Longitude: {draft.lon.toFixed(5)}</span>
+                <span>Latitude: {draft.lat.toFixed(5)}</span>
               </div>
             </div>
           </div>
@@ -246,7 +246,7 @@ export default function LocationEditorModal({
         )}
         <div className="location-dialog__actions">
           <button type="button" className="pill" onClick={onClose} disabled={saving}>
-            取消
+            Cancel
           </button>
           <button
             type="button"
@@ -254,7 +254,7 @@ export default function LocationEditorModal({
             onClick={handleSave}
             disabled={saving || !draft.address.trim()}
           >
-            {saving ? "保存中..." : "保存位置"}
+            {saving ? "Saving..." : "Save location"}
           </button>
         </div>
       </div>

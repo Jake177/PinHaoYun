@@ -50,7 +50,7 @@ const resolveClientSecret = async () => {
 async function secretHash(username: string) {
   const clientSecret = await resolveClientSecret();
   if (!clientSecret) {
-    throw new Error("服务器配置错误: COGNITO_CLIENT_SECRET 未定义");
+    throw new Error("Server configuration error: COGNITO_CLIENT_SECRET is not set");
   }
   const hmac = crypto.createHmac("sha256", clientSecret);
   hmac.update(username + clientId);
@@ -98,6 +98,6 @@ export async function POST(req: Request) {
     // Depending on pool settings, the user may need to confirm by code
     return NextResponse.json({ ok: true, userConfirmed: result.UserConfirmed ?? false });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "注册失败" }, { status: 400 });
+    return NextResponse.json({ error: err?.message || "Sign-up failed" }, { status: 400 });
   }
 }

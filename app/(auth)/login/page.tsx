@@ -13,16 +13,16 @@ const getParam = (params: SearchParams, key: string) => {
 const statusMessage = (status: string | undefined) => {
   switch (status) {
     case "registered":
-      return "注册成功，验证码已发送到邮箱，请输入验证码完成验证。";
+      return "Registration successful. We've sent a verification code to your email. Enter it to finish verifying your account.";
     case "verified":
-      return "邮箱验证成功，请使用密码登录。";
+      return "Email verified. You can now sign in with your password.";
     default:
       return null;
   }
 };
 
 export const metadata: Metadata = {
-  title: "登录 | PinHaoYun",
+  title: "Sign in | PinHaoYun",
 };
 
 export default async function LoginPage({
@@ -43,8 +43,8 @@ export default async function LoginPage({
   return (
     <>
       <AuthHeading
-        title="登录 PinHaoYun"
-        description="输入邮箱与密码登录，如果账户未验证，我们会引导你完成验证码验证。"
+        title="Sign in to PinHaoYun"
+        description=""
       />
       <LoginForm
         defaultEmail={email}
@@ -52,7 +52,7 @@ export default async function LoginPage({
         redirectTo={redirectTo}
       />
       <p className="auth-helper">
-        还没有账号？<Link href="/register">立即注册</Link>
+        Don&apos;t have an account? <Link href="/register">Create a new account</Link>
       </p>
     </>
   );
