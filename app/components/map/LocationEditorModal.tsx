@@ -210,6 +210,9 @@ export default function LocationEditorModal({
                 {searching ? "Searching..." : "Search"}
               </button>
             </div>
+            <p className="location-hint">
+              Pick a result from the list or tap the map to set the address.
+            </p>
             {results.length > 0 && (
               <div className="location-results">
                 {results.map((result) => (
@@ -226,14 +229,12 @@ export default function LocationEditorModal({
             )}
             <div className="location-map" ref={mapContainer} />
             <div className="location-fields">
-              <label className="location-field">
-                Address
-                <input
-                  className="input"
-                  value={draft.address}
-                  readOnly
-                />
-              </label>
+              <div className="location-field">
+                <span>Address</span>
+                <div className="location-address" aria-live="polite">
+                  {draft.address.trim() ? draft.address : "Select a result to populate the address."}
+                </div>
+              </div>
               <div className="location-meta">
                 <span>Longitude: {draft.lon.toFixed(5)}</span>
                 <span>Latitude: {draft.lat.toFixed(5)}</span>

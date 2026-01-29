@@ -301,36 +301,37 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             <p className="auth-hero__eyebrow">PinHaoYun</p>
             <h1>{greeting}</h1>
           </div>
-          <VideoUploader onUploaded={refreshAll} />
         </div>
-        {profileStats && (
-          <div className="dashboard-stats">
-            <div className="dashboard-stats__item">
-              <StorageRing
-                usedBytes={profileStats.usedBytes}
-                quotaBytes={profileStats.quotaBytes}
-                size={48}
-                strokeWidth={5}
-              />
-              <div className="dashboard-stats__text">
-                <span className="dashboard-stats__label">Storage</span>
-                <span className="dashboard-stats__value">
-                  {formatBytes(profileStats.usedBytes)} / {formatBytes(profileStats.quotaBytes)}
+        <div className="dashboard-header__actions">
+          {profileStats && (
+            <div className="dashboard-stats">
+              <div className="dashboard-stats__item">
+                <StorageRing
+                  usedBytes={profileStats.usedBytes}
+                  quotaBytes={profileStats.quotaBytes}
+                  size={48}
+                  strokeWidth={5}
+                />
+                <div className="dashboard-stats__text">
+                  <span className="dashboard-stats__label">Storage</span>
+                  <span className="dashboard-stats__value">
+                    {formatBytes(profileStats.usedBytes)} / {formatBytes(profileStats.quotaBytes)}
+                  </span>
+                </div>
+              </div>
+              <div className="dashboard-stats__divider" />
+              <div className="dashboard-stats__item">
+                <span className="material-symbols-outlined">
+                  video_camera_front
                 </span>
+                <div className="dashboard-stats__text">
+                  <span className="dashboard-stats__label">Videos</span>
+                  <span className="dashboard-stats__value">{profileStats.videosCount}</span>
+                </div>
               </div>
             </div>
-            <div className="dashboard-stats__divider" />
-            <div className="dashboard-stats__item">
-              <span className="material-symbols-outlined">
-                video_camera_front
-              </span>
-              <div className="dashboard-stats__text">
-                <span className="dashboard-stats__label">Videos</span>
-                <span className="dashboard-stats__value">{profileStats.videosCount}</span>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       <section className="dashboard-panel">
@@ -377,40 +378,6 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             </div>
           </div>
           <div className="panel-actions">
-            {selectionMode ? (
-              <>
-                <button
-                  type="button"
-                  className="pill pill--error"
-                  onClick={() => setShowBatchConfirm(true)}
-                  disabled={selectedIds.size === 0 || batchDeleting}
-                >
-                  {batchDeleting ? "Deleting..." : "Delete"}
-                </button>
-                <button
-                  type="button"
-                  className="pill"
-                  onClick={resetSelection}
-                  disabled={batchDeleting}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                className="pill"
-                onClick={() => {
-                  setSelectionMode(true);
-                  setSelectedIds(new Set());
-                  setBatchError(null);
-                  setShowBatchConfirm(false);
-                }}
-                disabled={videos.length === 0}
-              >
-                Select
-              </button>
-            )}
             <button
               type="button"
               className="icon-button"
@@ -440,6 +407,43 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 />
               </svg>
             </button>
+            {!selectionMode ? (
+              <div className="panel-actions__swap panel-actions__default">
+                <VideoUploader onUploaded={refreshAll} variant="inline" />
+                <button
+                  type="button"
+                  className="pill"
+                  onClick={() => {
+                    setSelectionMode(true);
+                    setSelectedIds(new Set());
+                    setBatchError(null);
+                    setShowBatchConfirm(false);
+                  }}
+                  disabled={videos.length === 0}
+                >
+                  Select
+                </button>
+              </div>
+            ) : (
+              <div className="panel-actions__swap panel-actions__confirm">
+                <button
+                  type="button"
+                  className="pill pill--error"
+                  onClick={() => setShowBatchConfirm(true)}
+                  disabled={selectedIds.size === 0 || batchDeleting}
+                >
+                  {batchDeleting ? "Deleting..." : "Delete"}
+                </button>
+                <button
+                  type="button"
+                  className="pill"
+                  onClick={resetSelection}
+                  disabled={batchDeleting}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
           <div className="panel-status">
             {loading ? <span className="pill">Loading...</span> : null}

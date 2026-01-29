@@ -18,9 +18,10 @@ type UploadState = {
 
 type VideoUploaderProps = {
   onUploaded?: () => void;
+  variant?: "default" | "inline";
 };
 
-export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
+export default function VideoUploader({ onUploaded, variant = "default" }: VideoUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<UploadState[]>([]);
   const [busy, setBusy] = useState(false);
@@ -387,20 +388,20 @@ export default function VideoUploader({ onUploaded }: VideoUploaderProps) {
   };
 
   return (
-    <div className="uploader">
+    <div className={`uploader ${variant === "inline" ? "uploader--inline" : ""}`}>
       <div className="uploader__bar">
-        <div>
-          <h3>Upload videos</h3>
-          <p className="muted">Supports MOV / MP4 / HEVC. Max 2GB per file. Uploads up to {MAX_CONCURRENCY} videos in parallel.</p>
-        </div>
         <div className="uploader__actions">
           <button
-            className="dashboard-link"
+            className="icon-button uploader__upload"
             type="button"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
+            aria-label={busy ? "Uploading files" : "Upload files"}
+            title={busy ? "Uploading files" : "Upload files"}
           >
-            {busy ? "Uploading..." : "Choose files"}
+            <span className="material-symbols-outlined" aria-hidden="true">
+              {busy ? "progress_activity" : "upload"}
+            </span>
           </button>
           {busy && (
             <button

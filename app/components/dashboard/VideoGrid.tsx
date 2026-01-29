@@ -657,7 +657,7 @@ export default function VideoGrid({
                   onClick={closeSheet}
                   aria-label="Close details"
                 >
-                  <span className="material-symbols-outlined">close</span>
+                  <span className="material-symbols-outlined">close_small</span>
                 </button>
               </div>
               <ul>
