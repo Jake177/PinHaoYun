@@ -337,7 +337,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       <section className="dashboard-panel">
           <div className="panel-heading">
           <div className="panel-title">
-            <h2>My videos</h2>
+            <h2>My Library</h2>
             <div className="panel-filters">
               <select
                 className="input"

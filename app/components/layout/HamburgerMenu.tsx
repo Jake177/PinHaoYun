@@ -72,7 +72,7 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
     {
       href: "/dashboard" as Route,
       icon: "home",
-      label: "My videos",
+      label: "My Library",
       active: pathname === "/dashboard",
     },
     {
@@ -84,7 +84,7 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
     {
       href: "/dashboard/map" as Route,
       icon: "map_pin_heart",
-      label: "Footprint map",
+      label: "Footprints",
       active: pathname === "/dashboard/map",
     },
   ];
