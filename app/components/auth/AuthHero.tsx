@@ -16,6 +16,11 @@ export default function AuthHero({
 
   return (
     <section className="auth-hero">
+      {/* Animated decorative lines */}
+      <div className="auth-hero__decoration auth-hero__decoration--1" />
+      <div className="auth-hero__decoration auth-hero__decoration--2" />
+      <div className="auth-hero__decoration auth-hero__decoration--3" />
+      
       <div className="auth-hero__content">
         {eyebrow ? <p className="auth-hero__eyebrow">{eyebrow}</p> : null}
         <h1 className="auth-hero__title">

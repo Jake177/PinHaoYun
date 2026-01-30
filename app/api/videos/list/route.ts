@@ -155,6 +155,8 @@ export async function GET(request: NextRequest) {
         contentType: item.contentType,
         originalKey: item.originalKey,
         originalBucket: item.originalBucket,
+        originalPhotoKey: item.originalPhotoKey,
+        originalPhotoBucket: item.originalPhotoBucket,
         thumbnailKey: item.thumbnailKey,
         thumbnailBucket: item.thumbnailBucket,
         status: item.status,
@@ -214,6 +216,13 @@ export async function GET(request: NextRequest) {
           item.originalBucket || originalBucket,
           item.originalKey,
         );
+        // For photos, get the original photo (HEIC/etc) if available
+        const originalPhotoUrl = item.type === "PHOTO"
+          ? await signUrl(
+              item.originalPhotoBucket || originalBucket,
+              item.originalPhotoKey,
+            )
+          : null;
         const thumbnailUrl = await signUrl(thumbBucket, thumbKey);
         const thumbnailUrlAlt = thumbKeyAlt
           ? await signUrl(thumbBucket, thumbKeyAlt)
@@ -225,6 +234,7 @@ export async function GET(request: NextRequest) {
         return {
           ...item,
           originalUrl,
+          originalPhotoUrl,
           thumbnailUrl,
           thumbnailUrlAlt,
           liveVideoUrl,

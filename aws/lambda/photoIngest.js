@@ -679,6 +679,10 @@ exports.handler = async (event) => {
           setParts.push(`${nameKey} = if_not_exists(${nameKey}, ${valueKey})`);
         };
 
+        // Save original photo bucket and key (for Live Photo and original formats)
+        addField("originalPhotoBucket", bucket);
+        addField("originalPhotoKey", decodedKey);
+        
         if (thumbResult?.bucket) addField("thumbnailBucket", thumbResult.bucket);
         if (thumbResult?.key) addField("thumbnailKey", thumbResult.key);
 

@@ -12,6 +12,7 @@ type VideoItem = {
   thumbnailUrl?: string | null;
   thumbnailUrlAlt?: string | null;
   originalUrl?: string | null;
+  originalPhotoUrl?: string | null;
   liveVideoUrl?: string | null;
   liveVideoSize?: number;
   status?: string;

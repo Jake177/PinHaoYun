@@ -10,6 +10,7 @@ type VideoItem = {
   thumbnailUrl?: string | null;
   thumbnailUrlAlt?: string | null;
   originalUrl?: string | null;
+  originalPhotoUrl?: string | null;
   liveVideoUrl?: string | null;
   liveVideoSize?: number;
   status?: string;
@@ -126,11 +127,15 @@ export default function VideoGrid({
 
   const previewIsHeicPhoto =
     preview?.type === "PHOTO" && isHeicLike(preview.originalName);
+  // For photos: prefer originalPhotoUrl (HEIC/original format) for preview
+  // Fall back to thumbnail if original is not available
   const previewPhotoSrc =
-    preview?.thumbnailUrl ||
-    preview?.thumbnailUrlAlt ||
-    (!previewIsHeicPhoto ? preview?.originalUrl : null) ||
-    null;
+    preview?.type === "PHOTO"
+      ? preview?.originalPhotoUrl ||
+        preview?.thumbnailUrl ||
+        preview?.thumbnailUrlAlt ||
+        (preview?.originalUrl && !previewIsHeicPhoto ? preview.originalUrl : null)
+      : null;
   const hasPreviewMedia =
     preview?.type === "PHOTO"
       ? Boolean(preview?.liveVideoUrl || previewPhotoSrc)
@@ -174,7 +179,7 @@ export default function VideoGrid({
           onLoadMore();
         }
       },
-      { rootMargin: "200px" }
+      { rootMargin: "400px" }
     );
 
     observer.observe(sentinel);
@@ -182,14 +187,24 @@ export default function VideoGrid({
   }, [hasMore, loadingMore, onLoadMore]);
 
   useEffect(() => {
-    // Reset the metadata sheet state whenever the preview changes.
-    setShowMeta(false);
-    setShowDeleteConfirm(false);
-    setShowLocationEditor(false);
-    setDeleteError(null);
-    setLocationError(null);
-    setSheetTranslate(SHEET_TRANSLATE.closed);
-    dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
+    // When preview changes, automatically open the metadata sheet to full size
+    if (preview) {
+      setShowMeta(true);
+      setShowDeleteConfirm(false);
+      setShowLocationEditor(false);
+      setDeleteError(null);
+      setLocationError(null);
+      setSheetTranslate(SHEET_TRANSLATE.full);
+      dragRef.current.currentTranslate = SHEET_TRANSLATE.full;
+    } else {
+      setShowMeta(false);
+      setShowDeleteConfirm(false);
+      setShowLocationEditor(false);
+      setDeleteError(null);
+      setLocationError(null);
+      setSheetTranslate(SHEET_TRANSLATE.closed);
+      dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
+    }
   }, [previewKey]);
 
   const setTranslate = (value: number) => {
@@ -546,6 +561,12 @@ export default function VideoGrid({
                           {isPhoto && hasLiveVideo ? (
                             <span className="video-live">LIVE</span>
                           ) : null}
+                          {/* Show location_off icon if no coordinates */}
+                          {video.captureLat == null || video.captureLon == null ? (
+                            <span className="location-missing" title="No location data">
+                              <span className="material-symbols-outlined">location_off</span>
+                            </span>
+                          ) : null}
                         </>
                       ) : (
                         <div className="thumb-fallback">No preview</div>
@@ -603,36 +624,53 @@ export default function VideoGrid({
             </header>
             {hasPreviewMedia ? (
               preview.type === "PHOTO" ? (
-                preview.liveVideoUrl ? (
-                  <video
-                    key={previewKey || preview.id}
-                    src={preview.liveVideoUrl}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    poster={
-                      preview.thumbnailUrl ||
-                      preview.thumbnailUrlAlt ||
-                      preview.originalUrl ||
-                      undefined
-                    }
-                    className="preview-video"
-                  />
-                ) : (
-                  <img
-                    src={previewPhotoSrc || ""}
-                    data-alt-src={preview.thumbnailUrlAlt || undefined}
-                    alt={preview.originalName || "Photo"}
-                    className="preview-image"
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      const altSrc = img.dataset.altSrc;
-                      if (altSrc && img.src !== altSrc) {
-                        img.src = altSrc;
-                      }
-                    }}
-                  />
-                )
+                <div className="preview-container">
+                  {preview.liveVideoUrl ? (
+                    // For Live Photos: show photo with video toggle
+                    <>
+                      <img
+                        src={previewPhotoSrc || ""}
+                        data-alt-src={preview.thumbnailUrlAlt || undefined}
+                        alt={preview.originalName || "Photo"}
+                        className="preview-image"
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          const altSrc = img.dataset.altSrc;
+                          if (altSrc && img.src !== altSrc) {
+                            img.src = altSrc;
+                          }
+                        }}
+                      />
+                      <div className="live-photo-info">
+                        <span className="live-badge">Live Photo</span>
+                        <a
+                          href={preview.liveVideoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="pill pill--primary"
+                          title="Open dynamic video in new tab"
+                        >
+                          <span className="material-symbols-outlined">play_arrow</span>
+                          Play motion
+                        </a>
+                      </div>
+                    </>
+                  ) : (
+                    <img
+                      src={previewPhotoSrc || ""}
+                      data-alt-src={preview.thumbnailUrlAlt || undefined}
+                      alt={preview.originalName || "Photo"}
+                      className="preview-image"
+                      onError={(e) => {
+                        const img = e.currentTarget;
+                        const altSrc = img.dataset.altSrc;
+                        if (altSrc && img.src !== altSrc) {
+                          img.src = altSrc;
+                        }
+                      }}
+                    />
+                  )}
+                </div>
               ) : (
                 <video
                   key={previewKey || preview.id}
