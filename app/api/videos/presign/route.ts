@@ -7,7 +7,9 @@ import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
-const ALLOWED_EXT = ["mov", "mp4", "hevc", "m4v"];
+const ALLOWED_VIDEO_EXT = ["mov", "mp4", "hevc", "m4v"];
+const ALLOWED_PHOTO_EXT = ["jpg", "jpeg", "png", "heic", "heif"];
+const ALLOWED_LIVE_VIDEO_EXT = ["mov"];
 
 const originalBucket =
   process.env.S3_ORIGINAL_BUCKET;
@@ -60,17 +62,36 @@ export async function POST(request: Request) {
       contentType?: string;
       size?: number;
       contentHash?: string;
+      mediaType?: "VIDEO" | "PHOTO";
+      mediaRole?: "image" | "liveVideo";
+      photoId?: string;
     };
     const {
       fileName = "",
       contentType = "application/octet-stream",
       size = 0,
       contentHash,
+      mediaType = "VIDEO",
+      mediaRole = "image",
+      photoId: requestedPhotoId,
     } =
       body || {};
 
     const ext = fileExt(fileName);
-    if (!ALLOWED_EXT.includes(ext)) {
+    const isPhoto = mediaType === "PHOTO";
+    const isLiveVideo = isPhoto && mediaRole === "liveVideo";
+    if (isLiveVideo && !requestedPhotoId?.trim()) {
+      return NextResponse.json(
+        { error: "Missing photo id for live photo video" },
+        { status: 400 },
+      );
+    }
+    const allowedExt = isPhoto
+      ? isLiveVideo
+        ? ALLOWED_LIVE_VIDEO_EXT
+        : ALLOWED_PHOTO_EXT
+      : ALLOWED_VIDEO_EXT;
+    if (!allowedExt.includes(ext)) {
       return NextResponse.json(
         { error: "Unsupported file type" },
         { status: 400 },
@@ -84,13 +105,13 @@ export async function POST(request: Request) {
     }
 
     // Fast duplicate check: if a matching hash already exists, return `duplicate` immediately.
-    if (tableName && contentHash) {
+    if (tableName && contentHash && !isLiveVideo) {
       const existing = await ddb.send(
         new GetItemCommand({
           TableName: tableName,
           Key: {
             email: { S: userId.toLowerCase() },
-            sk: { S: `HASH#${contentHash}` },
+            sk: { S: isPhoto ? `HASH#PHOTO#${contentHash}` : `HASH#${contentHash}` },
           },
         }),
       );
@@ -100,8 +121,14 @@ export async function POST(request: Request) {
     }
 
     const safeName = sanitizeName(fileName || `upload.${ext || "mp4"}`);
-    const id = crypto.randomUUID();
-    const key = `video/${userId.toLowerCase()}/${id}_${safeName}`;
+    const id = isPhoto
+      ? (requestedPhotoId?.trim() || crypto.randomUUID())
+      : crypto.randomUUID();
+    const keyPrefix = isPhoto ? "photo" : "video";
+    const keyName = isPhoto && isLiveVideo
+      ? `${id}_live.${ext || "mov"}`
+      : `${id}_${safeName}`;
+    const key = `${keyPrefix}/${userId.toLowerCase()}/${keyName}`;
 
     const command = new PutObjectCommand({
       Bucket: originalBucket,
@@ -118,6 +145,8 @@ export async function POST(request: Request) {
       key,
       bucket: originalBucket,
       duplicate: false,
+      mediaType: isPhoto ? "PHOTO" : "VIDEO",
+      photoId: isPhoto ? id : undefined,
     });
   } catch (error: any) {
     console.error("[presign] error", error);

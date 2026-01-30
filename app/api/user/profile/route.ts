@@ -90,6 +90,7 @@ export async function GET() {
       quotaBytes: dbProfile.quotaBytes || 256 * 1024 * 1024 * 1024, // 256GB default
       usedBytes: dbProfile.usedBytes || 0,
       videosCount: dbProfile.videosCount || 0,
+      photoCount: dbProfile.photoCount || 0,
       createdAt: dbProfile.createdAt || null,
     });
   } catch (error: any) {

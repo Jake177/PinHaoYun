@@ -42,6 +42,10 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as {
       videoId?: string;
+      photoId?: string;
+      mediaId?: string;
+      mediaType?: "VIDEO" | "PHOTO";
+      type?: "VIDEO" | "PHOTO";
       lat?: number;
       lon?: number;
       address?: string;
@@ -50,13 +54,14 @@ export async function POST(request: Request) {
       country?: string;
     };
 
-    const videoId = body.videoId?.trim();
+    const mediaId = (body.mediaId || body.videoId || body.photoId || "").trim();
+    const mediaType = body.mediaType || body.type || (body.photoId ? "PHOTO" : "VIDEO");
     const lat = Number(body.lat);
     const lon = Number(body.lon);
     const address = body.address?.trim() || "";
 
-    if (!videoId) {
-      return NextResponse.json({ error: "Missing video id" }, { status: 400 });
+    if (!mediaId) {
+      return NextResponse.json({ error: "Missing media id" }, { status: 400 });
     }
     if (!isValidCoord(lat, -90, 90) || !isValidCoord(lon, -180, 180)) {
       return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
@@ -66,7 +71,8 @@ export async function POST(request: Request) {
     }
 
     const normalizedEmail = email.toLowerCase();
-    const sk = `VIDEO#${videoId}`;
+    const skPrefix = mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
+    const sk = `${skPrefix}#${mediaId}`;
 
     const existing = await ddb.send(
       new GetItemCommand({
@@ -79,7 +85,7 @@ export async function POST(request: Request) {
     );
 
     if (!existing.Item) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 });
+      return NextResponse.json({ error: "Media not found" }, { status: 404 });
     }
 
     const item = unmarshall(existing.Item) as Record<string, any>;

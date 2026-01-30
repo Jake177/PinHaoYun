@@ -60,7 +60,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!key.startsWith(`video/${normalizedUser}/`)) {
+    if (
+      !key.startsWith(`video/${normalizedUser}/`) &&
+      !key.startsWith(`photo/${normalizedUser}/`)
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -72,9 +75,13 @@ export async function POST(request: Request) {
       }),
     );
 
-    const videoId = key.split("/").pop() || "";
-    if (videoId) {
-      const reserveSk = `RESERVE#${videoId}`;
+    const keyName = key.split("/").pop() || "";
+    if (keyName) {
+      const isPhoto = key.startsWith(`photo/${normalizedUser}/`);
+      const photoId = isPhoto ? keyName.split("_")[0] : "";
+      const reserveSk = isPhoto
+        ? `RESERVE#PHOTO#${photoId}`
+        : `RESERVE#${keyName}`;
       const reserveRes = await ddb.send(
         new GetItemCommand({
           TableName: tableName,

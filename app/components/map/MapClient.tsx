@@ -26,10 +26,10 @@ export default function MapClient() {
     <div className="map-page">
       <div className="map-page__header">
         <Link href="/dashboard" className="back-link">
-          ← Back to videos
+          ← Back to library
         </Link>
         <h1>Footprint map</h1>
-        <p className="muted">See where your videos were captured</p>
+        <p className="muted">See where your photos and videos were captured</p>
       </div>
       <div className="map-page__content">
         <FootprintMap onVideoSelect={handleVideoSelect} />

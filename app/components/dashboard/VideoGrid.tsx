@@ -5,9 +5,12 @@ import LocationEditorModal from "@/app/components/map/LocationEditorModal";
 
 type VideoItem = {
   id: string;
+  type?: "VIDEO" | "PHOTO";
   originalName?: string;
   thumbnailUrl?: string | null;
   originalUrl?: string | null;
+  liveVideoUrl?: string | null;
+  liveVideoSize?: number;
   status?: string;
   createdAt?: string;
   captureTime?: string;
@@ -43,7 +46,7 @@ type VideoGridProps = {
   selectedIds?: Set<string>;
   onToggleSelect?: (videoId: string) => void;
   onUpdateLocation?: (
-    videoId: string,
+    mediaId: string,
     data: {
       lat: number;
       lon: number;
@@ -52,6 +55,7 @@ type VideoGridProps = {
       region?: string;
       country?: string;
     },
+    mediaType?: "VIDEO" | "PHOTO",
   ) => Promise<void>;
 };
 
@@ -405,7 +409,7 @@ export default function VideoGrid({
     setLocationSaving(true);
     setLocationError(null);
     try {
-      await onUpdateLocation(preview.id, draft);
+      await onUpdateLocation(preview.id, draft, preview.type || "VIDEO");
       setPreview((prev) =>
         prev
           ? {
@@ -431,7 +435,7 @@ export default function VideoGrid({
     <>
       {videos.length === 0 ? (
         <div className="empty-state">
-          <p>No videos yet. Use “Upload videos” above to get started.</p>
+          <p>No items yet. Use the upload button to add photos or videos.</p>
         </div>
       ) : (
         groups.map((group) => (
@@ -440,6 +444,8 @@ export default function VideoGrid({
             <div className="video-grid">
               {group.items.map((video) => {
                 const previewUrl = video.thumbnailUrl || video.originalUrl || "";
+                const isPhoto = video.type === "PHOTO";
+                const hasLiveVideo = Boolean(video.liveVideoUrl);
                 const isSelecting = Boolean(selectionMode && onToggleSelect);
                 const isSelected = Boolean(isSelecting && selectedIds?.has(video.id));
                 const handleSelect = () => {
@@ -486,18 +492,25 @@ export default function VideoGrid({
                           handlePreviewClick();
                         }
                       }}
-                      aria-label={isSelecting ? "Select video" : "Open preview"}
+                      aria-label={isSelecting ? "Select item" : "Open preview"}
                     >
                       {previewUrl ? (
                         <>
-                          <video
-                            src={previewUrl}
-                            muted
-                            preload="metadata"
-                            playsInline
-                            poster={video.thumbnailUrl || video.originalUrl || undefined}
-                          />
-                          <span className="video-play">▶</span>
+                          {isPhoto ? (
+                            <img src={previewUrl} alt="" loading="lazy" />
+                          ) : (
+                            <video
+                              src={previewUrl}
+                              muted
+                              preload="metadata"
+                              playsInline
+                              poster={video.thumbnailUrl || video.originalUrl || undefined}
+                            />
+                          )}
+                          {!isPhoto ? <span className="video-play">▶</span> : null}
+                          {isPhoto && hasLiveVideo ? (
+                            <span className="video-live">LIVE</span>
+                          ) : null}
                         </>
                       ) : (
                         <div className="thumb-fallback">No preview</div>
@@ -554,15 +567,35 @@ export default function VideoGrid({
               </button>
             </header>
             {preview.originalUrl ? (
-              <video
-                key={previewKey || preview.id}
-                src={preview.originalUrl}
-                controls
-                playsInline
-                preload="metadata"
-                poster={preview.thumbnailUrl || undefined}
-                className="preview-video"
-              />
+              preview.type === "PHOTO" ? (
+                preview.liveVideoUrl ? (
+                  <video
+                    key={previewKey || preview.id}
+                    src={preview.liveVideoUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    poster={preview.thumbnailUrl || preview.originalUrl || undefined}
+                    className="preview-video"
+                  />
+                ) : (
+                  <img
+                    src={preview.originalUrl || preview.thumbnailUrl || ""}
+                    alt={preview.originalName || "Photo"}
+                    className="preview-image"
+                  />
+                )
+              ) : (
+                <video
+                  key={previewKey || preview.id}
+                  src={preview.originalUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  poster={preview.thumbnailUrl || undefined}
+                  className="preview-video"
+                />
+              )
             ) : (
               <div className="empty-state">No preview available</div>
             )}
@@ -663,16 +696,27 @@ export default function VideoGrid({
               <ul>
                 <li>Captured: {formatDate(preview.captureTime || preview.createdAt) || "Unknown"}</li>
                 <li>File size: {formatSize(preview.size)}</li>
-                <li>Duration: {formatDuration(preview.durationSec) || "Unknown"}</li>
-                <li>
-                  Resolution:
-                  {preview.width && preview.height
-                    ? `${preview.width} × ${preview.height}`
-                    : "Unknown"}
-                </li>
-                <li>Frame rate: {formatFps(preview.fps) || "Unknown"}</li>
-                <li>Codec: {preview.codec || "Unknown"}</li>
-                <li>Bitrate: {formatBitrate(preview.bitrate) || "Unknown"}</li>
+                {preview.type !== "PHOTO" ? (
+                  <>
+                    <li>Duration: {formatDuration(preview.durationSec) || "Unknown"}</li>
+                    <li>
+                      Resolution:
+                      {preview.width && preview.height
+                        ? `${preview.width} × ${preview.height}`
+                        : "Unknown"}
+                    </li>
+                    <li>Frame rate: {formatFps(preview.fps) || "Unknown"}</li>
+                    <li>Codec: {preview.codec || "Unknown"}</li>
+                    <li>Bitrate: {formatBitrate(preview.bitrate) || "Unknown"}</li>
+                  </>
+                ) : (
+                  <li>
+                    Resolution:
+                    {preview.width && preview.height
+                      ? `${preview.width} × ${preview.height}`
+                      : "Unknown"}
+                  </li>
+                )}
                 <li>
                   Device:
                   {preview.deviceMake || preview.deviceModel

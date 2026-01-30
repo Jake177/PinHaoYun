@@ -7,9 +7,12 @@ import StorageRing from "../profile/StorageRing";
 
 type VideoItem = {
   id: string;
+  type?: "VIDEO" | "PHOTO";
   originalName?: string;
   thumbnailUrl?: string | null;
   originalUrl?: string | null;
+  liveVideoUrl?: string | null;
+  liveVideoSize?: number;
   status?: string;
   createdAt?: string;
   captureTime?: string;
@@ -64,6 +67,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     usedBytes: number;
     quotaBytes: number;
     videosCount: number;
+    photoCount: number;
   } | null>(null);
 
   const greeting = useMemo(
@@ -163,6 +167,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           usedBytes: data.usedBytes || 0,
           quotaBytes: data.quotaBytes || 256 * 1024 * 1024 * 1024,
           videosCount: data.videosCount || 0,
+          photoCount: data.photoCount || 0,
         });
       }
     } catch {
@@ -180,11 +185,14 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   }, [fetchProfile]);
 
   const handleDelete = useCallback(
-    async (videoId: string) => {
+    async (item: VideoItem) => {
       const resp = await fetch("/api/videos/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId }),
+        body: JSON.stringify({
+          mediaId: item.id,
+          mediaType: item.type || "VIDEO",
+        }),
       });
       if (!resp.ok) {
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
@@ -217,11 +225,20 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
   const handleBatchDelete = useCallback(async () => {
     if (batchDeleting || selectedIds.size === 0) return;
-    const ids = Array.from(selectedIds);
+    const selectedItems = videos.filter((v) => selectedIds.has(v.id));
+    const payloadItems = selectedItems.map((item) => ({
+      id: item.id,
+      type: item.type || "VIDEO",
+    }));
     const previousVideos = videos;
     const previousStats = profileStats;
-    const removedVideos = videos.filter((v) => selectedIds.has(v.id));
-    const removedBytes = removedVideos.reduce((sum, v) => sum + (v.size || 0), 0);
+    const removedVideos = selectedItems;
+    const removedVideoCount = removedVideos.filter((v) => v.type !== "PHOTO").length;
+    const removedPhotoCount = removedVideos.filter((v) => v.type === "PHOTO").length;
+    const removedBytes = removedVideos.reduce(
+      (sum, v) => sum + (v.size || 0) + (v.liveVideoSize || 0),
+      0,
+    );
 
     setBatchDeleting(true);
     setBatchError(null);
@@ -230,7 +247,8 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       setProfileStats({
         usedBytes: Math.max(0, profileStats.usedBytes - removedBytes),
         quotaBytes: profileStats.quotaBytes,
-        videosCount: Math.max(0, profileStats.videosCount - removedVideos.length),
+        videosCount: Math.max(0, profileStats.videosCount - removedVideoCount),
+        photoCount: Math.max(0, profileStats.photoCount - removedPhotoCount),
       });
     }
 
@@ -238,7 +256,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       const resp = await fetch("/api/videos/delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds: ids }),
+        body: JSON.stringify({ items: payloadItems }),
       });
       if (!resp.ok) {
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
@@ -256,7 +274,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
   const handleUpdateLocation = useCallback(
     async (
-      videoId: string,
+      mediaId: string,
       data: {
         lat: number;
         lon: number;
@@ -265,11 +283,12 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         region?: string;
         country?: string;
       },
+      mediaType: "VIDEO" | "PHOTO" = "VIDEO",
     ) => {
       const resp = await fetch("/api/videos/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoId, ...data }),
+        body: JSON.stringify({ mediaId, mediaType, ...data }),
       });
       if (!resp.ok) {
         const err = (await resp.json().catch(() => ({}))) as { error?: string };
@@ -327,6 +346,28 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 <div className="dashboard-stats__text">
                   <span className="dashboard-stats__label">Videos</span>
                   <span className="dashboard-stats__value">{profileStats.videosCount}</span>
+                </div>
+              </div>
+              <div className="dashboard-stats__divider" />
+              <div className="dashboard-stats__item">
+                <span className="material-symbols-outlined">
+                  photo_camera
+                </span>
+                <div className="dashboard-stats__text">
+                  <span className="dashboard-stats__label">Photos</span>
+                  <span className="dashboard-stats__value">{profileStats.photoCount}</span>
+                </div>
+              </div>
+              <div className="dashboard-stats__divider" />
+              <div className="dashboard-stats__item">
+                <span className="material-symbols-outlined">
+                  collections
+                </span>
+                <div className="dashboard-stats__text">
+                  <span className="dashboard-stats__label">Total</span>
+                  <span className="dashboard-stats__value">
+                    {profileStats.videosCount + profileStats.photoCount}
+                  </span>
                 </div>
               </div>
             </div>
@@ -458,7 +499,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           hasMore={hasMore}
           loadingMore={loadingMore}
           onLoadMore={loadMore}
-          onDelete={(video) => handleDelete(video.id)}
+          onDelete={handleDelete}
           selectionMode={selectionMode}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelection}
@@ -480,7 +521,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           >
             <h3 className="confirm-dialog__title">Confirm deletion</h3>
             <p className="confirm-dialog__text">
-              Delete {selectedIds.size} video{selectedIds.size === 1 ? "" : "s"}?
+              Delete {selectedIds.size} item{selectedIds.size === 1 ? "" : "s"}?
             </p>
             {batchError ? (
               <p className="pill pill--error">{batchError}</p>

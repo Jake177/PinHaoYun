@@ -25,14 +25,17 @@ exports.handler = async (event) => {
     try {
       const body = record.body ? JSON.parse(record.body) : {};
       const email = body.email ? String(body.email).toLowerCase() : "";
-      const videoId = body.videoId ? String(body.videoId) : "";
+      const rawType = body.mediaType || body.type;
+      const mediaType =
+        rawType === "PHOTO" || body.photoId ? "PHOTO" : "VIDEO";
+      const mediaId = body.mediaId || body.videoId || body.photoId || "";
 
-      if (!email || !videoId) {
+      if (!email || !mediaId) {
         console.warn("Skipping delete request with missing info", body);
         continue;
       }
 
-      const sk = `VIDEO#${videoId}`;
+      const sk = `${mediaType}#${mediaId}`;
       const res = await ddb.send(
         new GetItemCommand({
           TableName: TABLE_NAME,
@@ -44,7 +47,7 @@ exports.handler = async (event) => {
       );
 
       if (!res.Item) {
-        console.warn("Video record not found, skipping", { email, videoId });
+        console.warn("Media record not found, skipping", { email, mediaId, mediaType });
         continue;
       }
 
@@ -53,8 +56,12 @@ exports.handler = async (event) => {
       const originalKey = item.originalKey;
       const thumbnailBucket = item.thumbnailBucket || DEFAULT_THUMBNAIL_BUCKET;
       const thumbnailKey = item.thumbnailKey;
+      const liveVideoBucket = item.liveVideoBucket || originalBucket || DEFAULT_ORIGINAL_BUCKET;
+      const liveVideoKey = item.liveVideoKey;
       const contentHash = item.contentHash;
       const size = safeNumber(item.size);
+      const liveVideoSize = safeNumber(item.liveVideoSize);
+      const totalSize = size + liveVideoSize;
 
       if (originalBucket && originalKey) {
         await s3.send(
@@ -74,7 +81,17 @@ exports.handler = async (event) => {
         );
       }
 
+      if (mediaType === "PHOTO" && liveVideoBucket && liveVideoKey) {
+        await s3.send(
+          new DeleteObjectCommand({
+            Bucket: liveVideoBucket,
+            Key: liveVideoKey,
+          }),
+        );
+      }
+
       const now = new Date().toISOString();
+      const countField = mediaType === "PHOTO" ? "photoCount" : "videosCount";
       const transactItems = [
         {
           Delete: {
@@ -88,10 +105,13 @@ exports.handler = async (event) => {
             TableName: TABLE_NAME,
             Key: { email: { S: email }, sk: { S: "PROFILE" } },
             UpdateExpression:
-              "SET updatedAt = :now ADD usedBytes :negSize, videosCount :negOne",
+              "SET updatedAt = :now ADD usedBytes :negSize, #count :negOne",
+            ExpressionAttributeNames: {
+              "#count": countField,
+            },
             ExpressionAttributeValues: {
               ":now": { S: now },
-              ":negSize": { N: String(-size) },
+              ":negSize": { N: String(-totalSize) },
               ":negOne": { N: "-1" },
             },
           },
@@ -99,10 +119,12 @@ exports.handler = async (event) => {
       ];
 
       if (contentHash) {
+        const hashKey =
+          mediaType === "PHOTO" ? `HASH#PHOTO#${contentHash}` : `HASH#${contentHash}`;
         transactItems.splice(1, 0, {
           Delete: {
             TableName: TABLE_NAME,
-            Key: { email: { S: email }, sk: { S: `HASH#${contentHash}` } },
+            Key: { email: { S: email }, sk: { S: hashKey } },
           },
         });
       }

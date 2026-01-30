@@ -15,7 +15,9 @@ import crypto from "node:crypto";
 import { decodeIdToken } from "@/app/lib/jwt";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
-const ALLOWED_EXT = ["mov", "mp4", "hevc", "m4v"];
+const ALLOWED_VIDEO_EXT = ["mov", "mp4", "hevc", "m4v"];
+const ALLOWED_PHOTO_EXT = ["jpg", "jpeg", "png", "heic", "heif"];
+const ALLOWED_LIVE_VIDEO_EXT = ["mov"];
 
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
@@ -71,16 +73,22 @@ export async function POST(request: Request) {
       contentType?: string;
       size?: number;
       contentHash?: string;
+      mediaType?: "VIDEO" | "PHOTO";
+      mediaRole?: "image" | "liveVideo";
+      photoId?: string;
     };
     const {
       fileName = "",
       contentType = "application/octet-stream",
       size = 0,
       contentHash,
+      mediaType = "VIDEO",
+      mediaRole = "image",
+      photoId: requestedPhotoId,
     } = body || {};
     const sizeNumber = Number(size || 0);
 
-    if (!contentHash) {
+    if (!contentHash && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
       return NextResponse.json(
         { error: "Missing content hash" },
         { status: 400 },
@@ -88,7 +96,20 @@ export async function POST(request: Request) {
     }
 
     const ext = fileExt(fileName);
-    if (!ALLOWED_EXT.includes(ext)) {
+    const isPhoto = mediaType === "PHOTO";
+    const isLiveVideo = isPhoto && mediaRole === "liveVideo";
+    if (isLiveVideo && !requestedPhotoId?.trim()) {
+      return NextResponse.json(
+        { error: "Missing photo id for live photo video" },
+        { status: 400 },
+      );
+    }
+    const allowedExt = isPhoto
+      ? isLiveVideo
+        ? ALLOWED_LIVE_VIDEO_EXT
+        : ALLOWED_PHOTO_EXT
+      : ALLOWED_VIDEO_EXT;
+    if (!allowedExt.includes(ext)) {
       return NextResponse.json(
         { error: "Unsupported file type" },
         { status: 400 },
@@ -101,24 +122,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const existing = await ddb.send(
-      new GetItemCommand({
-        TableName: tableName,
-        Key: {
-          email: { S: normalizedUser },
-          sk: { S: `HASH#${contentHash}` },
-        },
-      }),
-    );
-    if (existing.Item) {
-      return NextResponse.json({ duplicate: true });
+    if (!isLiveVideo) {
+      const hashSk = isPhoto ? `HASH#PHOTO#${contentHash}` : `HASH#${contentHash}`;
+      const existing = await ddb.send(
+        new GetItemCommand({
+          TableName: tableName,
+          Key: {
+            email: { S: normalizedUser },
+            sk: { S: hashSk },
+          },
+        }),
+      );
+      if (existing.Item) {
+        return NextResponse.json({ duplicate: true });
+      }
     }
 
     const safeName = sanitizeName(fileName || `upload.${ext || "mp4"}`);
-    const id = crypto.randomUUID();
-    const key = `video/${normalizedUser}/${id}_${safeName}`;
-    const videoId = key.split("/").pop() || "";
-    if (!videoId) {
+    const id = isPhoto
+      ? (requestedPhotoId?.trim() || crypto.randomUUID())
+      : crypto.randomUUID();
+    const keyPrefix = isPhoto ? "photo" : "video";
+    const keyName = isPhoto && isLiveVideo
+      ? `${id}_live.${ext || "mov"}`
+      : `${id}_${safeName}`;
+    const key = `${keyPrefix}/${normalizedUser}/${keyName}`;
+    const mediaId = id;
+    if (!mediaId) {
       return NextResponse.json(
         { error: "Invalid key format" },
         { status: 400 },
@@ -187,7 +217,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const reserveSk = `RESERVE#${videoId}`;
+    const reserveSk = isPhoto ? `RESERVE#PHOTO#${mediaId}` : `RESERVE#${keyName}`;
     const expiresAt = Math.floor(Date.now() / 1000) + RESERVE_TTL_SECONDS;
     let reserved = false;
     let attempt = 0;
@@ -226,6 +256,10 @@ export async function POST(request: Request) {
                     size: { N: String(sizeNumber) },
                     createdAt: { S: now },
                     expiresAt: { N: String(expiresAt) },
+                    mediaType: { S: isPhoto ? "PHOTO" : "VIDEO" },
+                    mediaRole: {
+                      S: isPhoto ? (isLiveVideo ? "liveVideo" : "image") : "video",
+                    },
                   },
                   ConditionExpression: "attribute_not_exists(sk)",
                 },
@@ -287,6 +321,8 @@ export async function POST(request: Request) {
       key,
       bucket: originalBucket,
       duplicate: false,
+      mediaType: isPhoto ? "PHOTO" : "VIDEO",
+      photoId: isPhoto ? mediaId : undefined,
     });
   } catch (error: any) {
     console.error("[multipart/init] error", error);

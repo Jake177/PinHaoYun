@@ -25,6 +25,7 @@ exports.handler = async (event) => {
         usedBytes: { N: "0" },
         reservedBytes: { N: "0" },
         videosCount: { N: "0" },
+        photoCount: { N: "0" },
         createdAt: { S: now },
         updatedAt: { S: now }
       },

@@ -20,15 +20,6 @@ const s3 = new S3Client({ region });
 
 const expiresInSeconds = Number(process.env.PRESIGN_TTL_SECONDS || 900);
 
-type VideoItem = {
-  id: string;
-  originalKey: string;
-  thumbnailKey?: string;
-  status?: string;
-  size?: number;
-  createdAt?: string;
-};
-
 async function signUrl(
   bucket: string | undefined,
   key: string | undefined,
@@ -84,74 +75,88 @@ export async function GET(request: NextRequest) {
 
     const limit = Math.min(Math.max(Number(limitParam) || DEFAULT_PAGE_SIZE, 1), 100);
 
-    // Decode cursor from base64 if provided
-    let exclusiveStartKey: Record<string, any> | undefined;
-    if (cursorParam) {
+    const decodeCursor = (cursor: string) => {
       try {
-        exclusiveStartKey = JSON.parse(
-          Buffer.from(cursorParam, "base64").toString("utf-8")
-        );
+        return JSON.parse(Buffer.from(cursor, "base64").toString("utf-8"));
       } catch {
-        // Invalid cursor, ignore
+        return {};
       }
-    }
+    };
 
-    const res = await ddb.send(
-      new QueryCommand({
-        TableName: tableName,
-        KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
-        ExpressionAttributeValues: {
-          ":email": { S: normalizedEmail },
-          ":skPrefix": { S: "VIDEO#" },
-        },
-        ExclusiveStartKey: exclusiveStartKey,
-        // Fetch more than limit to allow filtering, but cap at reasonable number
-        Limit: searchDate ? limit * 3 : limit + 10,
-      }),
-    );
+    const cursorState = cursorParam ? decodeCursor(cursorParam) : {};
+    const videoStartKey = cursorState.video || undefined;
+    const photoStartKey = cursorState.photo || undefined;
 
-    const records =
-      res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [];
+    const queryLimit = searchDate ? limit * 3 : limit + 10;
+    const queryByPrefix = async (skPrefix: string, startKey?: Record<string, any>) => {
+      const res = await ddb.send(
+        new QueryCommand({
+          TableName: tableName,
+          KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
+          ExpressionAttributeValues: {
+            ":email": { S: normalizedEmail },
+            ":skPrefix": { S: `${skPrefix}#` },
+          },
+          ExclusiveStartKey: startKey,
+          Limit: queryLimit,
+        }),
+      );
+      return {
+        items: res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [],
+        lastKey: res.LastEvaluatedKey || null,
+      };
+    };
 
-    const videos = records
+    const [videoRes, photoRes] = await Promise.all([
+      queryByPrefix("VIDEO", videoStartKey),
+      queryByPrefix("PHOTO", photoStartKey),
+    ]);
+
+    const records = [...videoRes.items, ...photoRes.items];
+
+    const media = records
       .filter(
         (r) =>
           typeof r.sk === "string" &&
-          r.sk.startsWith("VIDEO#") &&
+          (r.sk.startsWith("VIDEO#") || r.sk.startsWith("PHOTO#")) &&
           r.status !== "DELETING" &&
           r.status !== "DELETED",
       )
-      .map((vid) => ({
-        id: vid.videoId || vid.sk || "",
-        originalKey: vid.originalKey,
-        originalBucket: vid.originalBucket,
-        thumbnailKey: vid.thumbnailKey,
-        thumbnailBucket: vid.thumbnailBucket,
-        status: vid.status,
-        size: vid.size,
-        createdAt: vid.createdAt,
-        originalName: vid.originalName,
-        contentHash: vid.contentHash,
-        captureTime: vid.captureTime,
-        captureLocation: vid.captureLocation,
-        captureLat: vid.captureLat,
-        captureLon: vid.captureLon,
-        captureAddress: vid.captureAddress,
-        captureCity: vid.captureCity,
-        captureRegion: vid.captureRegion,
-        captureCountry: vid.captureCountry,
-        captureAlt: vid.captureAlt,
-        durationSec: vid.durationSec,
-        width: vid.width,
-        height: vid.height,
-        fps: vid.fps,
-        bitrate: vid.bitrate,
-        codec: vid.codec,
-        rotation: vid.rotation,
+      .map((item) => ({
+        id: item.videoId || item.photoId || item.sk || "",
+        type: item.type || (item.sk?.startsWith("PHOTO#") ? "PHOTO" : "VIDEO"),
+        originalKey: item.originalKey,
+        originalBucket: item.originalBucket,
+        thumbnailKey: item.thumbnailKey,
+        thumbnailBucket: item.thumbnailBucket,
+        status: item.status,
+        size: item.size,
+        createdAt: item.createdAt,
+        originalName: item.originalName,
+        contentHash: item.contentHash,
+        captureTime: item.captureTime,
+        captureLocation: item.captureLocation,
+        captureLat: item.captureLat,
+        captureLon: item.captureLon,
+        captureAddress: item.captureAddress,
+        captureCity: item.captureCity,
+        captureRegion: item.captureRegion,
+        captureCountry: item.captureCountry,
+        captureAlt: item.captureAlt,
+        durationSec: item.durationSec,
+        width: item.width,
+        height: item.height,
+        fps: item.fps,
+        bitrate: item.bitrate,
+        codec: item.codec,
+        rotation: item.rotation,
+        liveVideoKey: item.liveVideoKey,
+        liveVideoBucket: item.liveVideoBucket,
+        liveVideoSize: item.liveVideoSize,
       }));
 
     // Sort by capture time or created at (descending)
-    const sorted = videos.sort((a, b) => {
+    const sorted = media.sort((a, b) => {
       const da = toDate(a.captureTime) ?? toDate(a.createdAt) ?? 0;
       const db = toDate(b.captureTime) ?? toDate(b.createdAt) ?? 0;
       return db - da;
@@ -178,21 +183,31 @@ export async function GET(request: NextRequest) {
           item.thumbnailBucket || thumbnailBucket,
           item.thumbnailKey,
         );
+        const liveVideoUrl = await signUrl(
+          item.liveVideoBucket || originalBucket,
+          item.liveVideoKey,
+        );
         return {
           ...item,
           originalUrl,
           thumbnailUrl,
+          liveVideoUrl,
         };
       }),
     );
 
     // Prepare next cursor
     let nextCursor: string | null = null;
-    if (res.LastEvaluatedKey) {
-      nextCursor = Buffer.from(JSON.stringify(res.LastEvaluatedKey)).toString("base64");
+    if (videoRes.lastKey || photoRes.lastKey) {
+      nextCursor = Buffer.from(
+        JSON.stringify({
+          video: videoRes.lastKey,
+          photo: photoRes.lastKey,
+        }),
+      ).toString("base64");
     } else if (filtered.length > limit) {
-      // If we filtered and have more items locally, we need to continue from last item
-      // This is a simplified approach - for production you might need a more robust solution
+      // If we filtered and have more items locally, we need to continue from last item.
+      // This is a simplified approach - for production you might need a more robust solution.
     }
 
     return NextResponse.json({

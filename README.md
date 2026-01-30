@@ -1,6 +1,6 @@
 # PinHaoYun
 
-PinHaoYun is a personal cloud video library for uploading, organising, and revisiting memories. It focuses on a lightweight, stable experience: multi-device uploads, automatic thumbnails and metadata, map-based location editing, and safe (asynchronous) deletion.
+PinHaoYun is a personal cloud media library for uploading, organising, and revisiting memories. It focuses on a lightweight, stable experience: multi-device uploads, automatic thumbnails and metadata, map-based location editing, and safe (asynchronous) deletion for both videos and photos.
 
 Built with Next.js on the frontend, and AWS (Lambda/S3/DynamoDB/SQS/Cognito) for storage and background processing.
 
@@ -22,11 +22,15 @@ Built with Next.js on the frontend, and AWS (Lambda/S3/DynamoDB/SQS/Cognito) for
 - Best-effort duplicate detection via a quick content hash (first chunk + file size) and a DynamoDB hash lock
 - Automatic post-upload processing (S3-triggered Lambda):
   - Extracts video metadata (duration, resolution, FPS, codec, bitrate, device info)
-  - Generates a thumbnail (ffmpeg) and writes it to the thumbnail bucket
+  - Generates a video thumbnail (ffmpeg) and writes it to the thumbnail bucket
+  - Extracts photo metadata (EXIF, device, GPS) and generates photo thumbnails (ImageMagick)
+- Photo support (including Live Photos):
+  - Photos upload to `photo/<email>/...` and show thumbnail previews in the grid
+  - Live Photo videos (`.mov`) are stored alongside the photo and are playable in preview
 - Location workflows:
   - Auto-enrich address/city/region/country from embedded GPS coordinates (SQS-triggered Lambda + Mapbox)
   - Manual location editing on a map (keeps original coordinates where available)
-  - Footprint map view for videos with location data
+- Footprint map view for videos and photos with location data
 - Safe deletion workflow (SQS):
   - Marks videos as `DELETING` immediately in DynamoDB
   - Deletes original + thumbnail objects in S3 asynchronously
@@ -84,8 +88,9 @@ Open http://localhost:3000
 
 Some behaviour is controlled by hard-coded defaults in the app/Lambda code:
 
-- Max video size: 2GB (`MAX_BYTES` in uploader and API)
-- Allowed file types: MOV / MP4 / HEVC / M4V
+- Max media size: 2GB (`MAX_BYTES` in uploader and API)
+- Allowed video types: MOV / MP4 / HEVC / M4V
+- Allowed photo types: JPG / JPEG / PNG / HEIC / HEIF (Live Photo video uses MOV)
 - Multipart part size: 10MB
 - Max concurrent uploads (client): 3
 - Default quota: 256GB (`quotaBytes`)
@@ -127,6 +132,8 @@ All variables are documented in `.env.example`. The most important ones are:
 
 - `FFPROBE_PATH` (default `/opt/bin/ffprobe`)
 - `FFMPEG_PATH` (default `/opt/bin/ffmpeg`)
+- `IMAGEMAGICK_IDENTIFY_PATH` (default `/opt/bin/identify`)
+- `IMAGEMAGICK_CONVERT_PATH` (default `/opt/bin/convert`)
 - `CLEANUP_PREFIX` (default `video/`)
 - `CLEANUP_MAX_KEYS` (default `1000`)
 - `CLEANUP_PAGE_SIZE` (default `250`)
@@ -142,8 +149,11 @@ Common item types:
 
 - `PROFILE` – user quota + usage counters (`quotaBytes`, `usedBytes`, `reservedBytes`, `videosCount`)
 - `VIDEO#<videoId>` – video metadata record (S3 keys, status, metadata, location)
+- `PHOTO#<photoId>` – photo metadata record (S3 keys, status, metadata, location, optional live video)
 - `HASH#<contentHash>` – dedupe lock per user
+- `HASH#PHOTO#<contentHash>` – photo dedupe lock per user
 - `RESERVE#<videoId>` – temporary reservation record during multipart upload
+- `RESERVE#PHOTO#<photoId>` – temporary reservation record during photo uploads
 
 ## AWS Setup Notes (High Level)
 
@@ -151,13 +161,16 @@ Common item types:
 
 - Create two buckets: one for originals and one for thumbnails.
 - Ensure your S3 CORS configuration exposes the `ETag` header (multipart upload needs it).
-- The app stores originals under `video/<email>/<uuid>_<filename>`.
+- The app stores originals under `video/<email>/<uuid>_<filename>` and photos under `photo/<email>/<photoId>_<filename>`.
+- Live Photo videos are stored as `photo/<email>/<photoId>_live.mov`.
 - Uploads set `StorageClass: INTELLIGENT_TIERING` for original objects.
 
 ### Lambda functions (`aws/lambda/`)
 
 - `transcodeVideo.js` (S3 trigger): downloads the uploaded video, runs ffprobe/ffmpeg, generates a thumbnail, updates DynamoDB, and enqueues location enrichment.
   - Requires an ffmpeg/ffprobe Lambda layer (defaults to `/opt/bin/ffmpeg` and `/opt/bin/ffprobe`).
+- `photoIngest.js` (S3 trigger): extracts EXIF metadata from photos, generates thumbnails (ImageMagick), updates DynamoDB, and enqueues location enrichment.
+  - Requires an ImageMagick Lambda layer (defaults to `/opt/bin/identify` and `/opt/bin/convert`).
 - `enrichLocation.js` (SQS trigger): reverse-geocodes lat/lon via Mapbox and updates address fields in DynamoDB (skips records that were set manually).
 - `deleteVideo.js` (SQS trigger): deletes S3 objects and removes DynamoDB records, updating `usedBytes`/`videosCount`.
 - `postConfirmation.js` (Cognito trigger): initialises a user `PROFILE` item in DynamoDB on sign-up confirmation.

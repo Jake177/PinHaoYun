@@ -11,6 +11,7 @@ type VideoLocation = {
   thumbnailUrl: string | null;
   originalName?: string;
   captureTime?: string;
+  type?: "VIDEO" | "PHOTO";
 };
 
 type GeoJsonData = {
@@ -26,6 +27,7 @@ type GeoJsonData = {
       thumbnailUrl: string | null;
       originalName?: string;
       captureTime?: string;
+      type?: "VIDEO" | "PHOTO";
     };
   }>;
 };
@@ -120,7 +122,13 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
         source: "videos",
         filter: ["!", ["has", "point_count"]],
         paint: {
-          "circle-color": "#2563eb",
+          "circle-color": [
+            "match",
+            ["get", "type"],
+            "PHOTO",
+            "#a855f7",
+            "#2563eb",
+          ],
           "circle-radius": 10,
           "circle-stroke-width": 3,
           "circle-stroke-color": "#fff",
@@ -168,11 +176,12 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
           const coordinates = geometry.coordinates.slice() as [number, number];
           const props = features[0].properties;
 
+          const mediaLabel = props?.type === "PHOTO" ? "Photo" : "Video";
           const popupContent = `
             <div class="map-popup">
               ${props?.thumbnailUrl ? `<img src="${props.thumbnailUrl}" alt="${props?.originalName || 'Video'}" />` : ""}
               <div class="map-popup__info">
-                <p class="map-popup__name">${props?.originalName || "Untitled video"}</p>
+                <p class="map-popup__name">${props?.originalName || `Untitled ${mediaLabel.toLowerCase()}`}</p>
                 ${props?.captureTime ? `<p class="map-popup__time">${new Date(props.captureTime).toLocaleDateString("en-GB")}</p>` : ""}
               </div>
             </div>
@@ -262,8 +271,8 @@ export default function FootprintMap({ onVideoSelect }: FootprintMapProps) {
       )}
       {!loading && !error && totalCount === 0 && (
         <div className="map-empty">
-          <p>No videos with location data yet.</p>
-          <p className="muted">Upload a video with GPS metadata and it will appear on the map.</p>
+          <p>No media with location data yet.</p>
+          <p className="muted">Upload a photo or video with GPS metadata and it will appear on the map.</p>
         </div>
       )}
       <div

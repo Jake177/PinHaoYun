@@ -24,3 +24,5 @@ dist-ssr
 *.sln
 *.sw?
 aws/plan.png
+PHOTO_FEATURE_PLAN.md
+scripts/build-imagemagick-layer.sh

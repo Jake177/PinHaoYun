@@ -47,6 +47,7 @@ exports.handler = async (event) => {
       const body = record.body ? JSON.parse(record.body) : {};
       const email = body.email ? String(body.email).toLowerCase() : "";
       const videoId = body.videoId ? String(body.videoId) : "";
+      const mediaType = body.mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
       const lat = Number(body.lat);
       const lon = Number(body.lon);
 
@@ -97,7 +98,7 @@ exports.handler = async (event) => {
             TableName: TABLE_NAME,
             Key: {
               email: { S: email },
-              sk: { S: `VIDEO#${videoId}` },
+              sk: { S: `${mediaType}#${videoId}` },
             },
             UpdateExpression:
               "SET #address = :address, #city = :city, #region = :region, #country = :country, " +

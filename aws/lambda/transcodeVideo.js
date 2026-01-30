@@ -121,21 +121,22 @@ const makeThumbnail = async ({ bucket, key, userId, videoId, filePath }) => {
 const toAttrNumber = (value) => ({ N: String(value) });
 const toAttrString = (value) => ({ S: String(value) });
 
-const enqueueLocationEnrichment = async ({ email, videoId, lat, lon }) => {
-  if (!LOCATION_ENRICH_QUEUE_URL) return;
-  if (lat === undefined || lon === undefined) return;
-  try {
-    await sqs.send(
-      new SendMessageCommand({
-        QueueUrl: LOCATION_ENRICH_QUEUE_URL,
-        MessageBody: JSON.stringify({
-          email,
-          videoId,
-          lat,
-          lon,
+  const enqueueLocationEnrichment = async ({ email, videoId, lat, lon }) => {
+    if (!LOCATION_ENRICH_QUEUE_URL) return;
+    if (lat === undefined || lon === undefined) return;
+    try {
+      await sqs.send(
+        new SendMessageCommand({
+          QueueUrl: LOCATION_ENRICH_QUEUE_URL,
+          MessageBody: JSON.stringify({
+            email,
+            videoId,
+            mediaType: "VIDEO",
+            lat,
+            lon,
+          }),
         }),
-      }),
-    );
+      );
   } catch (error) {
     console.warn("Failed to enqueue location enrichment", error);
   }

@@ -47,7 +47,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!key.startsWith(`video/${normalizedUser}/`)) {
+    if (
+      !key.startsWith(`video/${normalizedUser}/`) &&
+      !key.startsWith(`photo/${normalizedUser}/`)
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

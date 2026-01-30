@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 
-const ALLOWED_TYPES = ["video/mp4", "video/quicktime", "video/hevc"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/hevc"];
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/heic", "image/heif"];
+const LIVE_VIDEO_TYPES = ["video/quicktime"];
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const MAX_CONCURRENCY = 3; // Maximum concurrent uploads
 const HASH_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB - only hash first chunk for speed
@@ -16,18 +19,35 @@ type UploadState = {
   previewUrl?: string;
 };
 
+type UploadTask = {
+  file: File;
+  mediaType: "VIDEO" | "PHOTO";
+  mediaRole?: "image" | "liveVideo";
+  photoId?: string;
+};
+
 type VideoUploaderProps = {
   onUploaded?: () => void;
   variant?: "default" | "inline";
+  listTargetId?: string;
 };
 
-export default function VideoUploader({ onUploaded, variant = "default" }: VideoUploaderProps) {
+export default function VideoUploader({ onUploaded, variant = "default", listTargetId }: VideoUploaderProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<UploadState[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listHost, setListHost] = useState<HTMLElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const removeTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    if (!listTargetId) {
+      setListHost(null);
+      return;
+    }
+    setListHost(document.getElementById(listTargetId));
+  }, [listTargetId]);
 
   const clearRemoveTimer = (name: string) => {
     const timer = removeTimersRef.current.get(name);
@@ -56,16 +76,56 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
     removeTimersRef.current.set(name, timer);
   };
 
-  const createVideoThumbnail = (file: File): Promise<string | null> =>
+  const createPreview = (file: File): Promise<string | null> =>
     new Promise((resolve) => {
       const objectUrl = URL.createObjectURL(file);
-      const video = document.createElement("video");
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const isImage =
+        file.type.startsWith("image/") ||
+        ["jpg", "jpeg", "png", "heic", "heif"].includes(ext);
       let captured = false;
 
       const cleanup = () => {
         URL.revokeObjectURL(objectUrl);
       };
 
+      if (isImage) {
+        const img = new Image();
+        img.onload = () => {
+          if (captured) return;
+          captured = true;
+          const width = img.width || 160;
+          const height = img.height || 90;
+          const maxSide = 96;
+          const scale = Math.min(1, maxSide / Math.max(width, height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(width * scale));
+          canvas.height = Math.max(1, Math.round(height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            cleanup();
+            resolve(null);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          try {
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+            cleanup();
+            resolve(dataUrl);
+          } catch {
+            cleanup();
+            resolve(null);
+          }
+        };
+        img.onerror = () => {
+          cleanup();
+          resolve(null);
+        };
+        img.src = objectUrl;
+        return;
+      }
+
+      const video = document.createElement("video");
       const captureFrame = () => {
         if (captured) return;
         captured = true;
@@ -93,19 +153,27 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
         }
       };
 
-      video.addEventListener("loadedmetadata", () => {
-        const seekTo = Math.min(0.1, Math.max(0, video.duration / 4 || 0));
-        if (Number.isFinite(seekTo) && seekTo > 0) {
-          video.currentTime = seekTo;
-        }
-      }, { once: true });
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          const seekTo = Math.min(0.1, Math.max(0, video.duration / 4 || 0));
+          if (Number.isFinite(seekTo) && seekTo > 0) {
+            video.currentTime = seekTo;
+          }
+        },
+        { once: true },
+      );
 
       video.addEventListener("seeked", captureFrame, { once: true });
       video.addEventListener("loadeddata", captureFrame, { once: true });
-      video.addEventListener("error", () => {
-        cleanup();
-        resolve(null);
-      }, { once: true });
+      video.addEventListener(
+        "error",
+        () => {
+          cleanup();
+          resolve(null);
+        },
+        { once: true },
+      );
 
       video.preload = "metadata";
       video.muted = true;
@@ -186,15 +254,27 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
     });
 
   // Process a single file upload
-  const processFile = async (file: File, signal?: AbortSignal): Promise<void> => {
+  const processFile = async (task: UploadTask, signal?: AbortSignal): Promise<void> => {
+    const { file, mediaType, mediaRole = "image", photoId } = task;
     const fileName = file.name;
     let uploadId: string | undefined;
     let key: string | undefined;
     let bucket: string | undefined;
 
     // Validate file type and size first
-    const extAllowed = ALLOWED_TYPES.includes(file.type);
-    if (!extAllowed || file.size > MAX_BYTES) {
+    const ext = fileName.split(".").pop()?.toLowerCase() || "";
+    const isImage =
+      ALLOWED_IMAGE_TYPES.includes(file.type) ||
+      ["jpg", "jpeg", "png", "heic", "heif"].includes(ext);
+    const isLiveVideo = LIVE_VIDEO_TYPES.includes(file.type) || ext === "mov";
+    const isVideo = ALLOWED_VIDEO_TYPES.includes(file.type);
+    const typeAllowed =
+      mediaType === "PHOTO"
+        ? mediaRole === "liveVideo"
+          ? isLiveVideo
+          : isImage
+        : isVideo;
+    if (!typeAllowed || file.size > MAX_BYTES) {
       updateItem(fileName, {
         status: "error",
         message: "Unsupported file type or file size is too large.",
@@ -226,6 +306,7 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
         key?: string;
         bucket?: string;
         duplicate?: boolean;
+        photoId?: string;
       }>(
         "/api/videos/multipart/init",
         {
@@ -233,6 +314,9 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
           contentType: file.type,
           size: file.size,
           contentHash,
+          mediaType,
+          mediaRole,
+          photoId,
         },
         signal,
       );
@@ -306,6 +390,9 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
           size: file.size,
           uploadedAt: new Date().toISOString(),
           contentHash,
+          mediaType,
+          mediaRole,
+          photoId,
         },
         signal,
       );
@@ -337,38 +424,133 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
-    const queue: UploadState[] = Array.from(files).map((file) => ({
-      name: file.name,
+    const fileArray = Array.from(files);
+    const photoIdByBase = new Map<string, string>();
+    const getBaseName = (name: string) => name.replace(/\.[^/.]+$/, "");
+    const isImageFile = (file: File) => {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const listContent = items.length > 0 ? (
+    <ul className="uploader__list">
+      {items.map((item) => (
+        <li key={item.name} className="uploader__item">
+          <div className="uploader__thumb" aria-hidden="true">
+            {item.previewUrl ? (
+              <img src={item.previewUrl} alt="" loading="lazy" />
+            ) : (
+              <span>VIDEO</span>
+            )}
+          </div>
+          <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
+            <div className="ellipsis">{item.name}</div>
+            <div className="progress">
+              <div
+                className="progress__bar"
+                style={{
+                  width: `${item.progress}%`,
+                  background:
+                    item.status === "error"
+                      ? "#ef4444"
+                      : item.status === "skipped"
+                      ? "#9ca3af"
+                      : "#16a34a",
+                }}
+              />
+            </div>
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              {item.status === "hashing"
+                ? "Hashing..."
+                : item.status === "uploading"
+                ? `Uploading ${item.progress}%`
+                : item.status === "done"
+                ? "Done"
+                : item.status === "skipped"
+                ? item.message || "Skipped"
+                : item.status === "error"
+                ? item.message || "Failed"
+                : "Pending"}
+            </div>
+          </div>
+          {item.status !== "uploading" && item.status !== "hashing" ? (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Remove"
+              onClick={() => removeItem(item.name)}
+            >
+              ✕
+            </button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  ) : null;
+
+  const listNode =
+    listContent && listTargetId
+      ? listHost
+        ? createPortal(listContent, listHost)
+        : null
+      : listContent;
+
+  return (
+        ALLOWED_IMAGE_TYPES.includes(file.type) ||
+        ["jpg", "jpeg", "png", "heic", "heif"].includes(ext)
+      );
+    };
+    const isLiveVideoFile = (file: File) => {
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      return LIVE_VIDEO_TYPES.includes(file.type) || ext === "mov";
+    };
+
+    fileArray.forEach((file) => {
+      if (!isImageFile(file)) return;
+      const base = getBaseName(file.name);
+      if (!photoIdByBase.has(base)) {
+        photoIdByBase.set(base, crypto.randomUUID());
+      }
+    });
+
+    const tasks: UploadTask[] = fileArray.map((file) => {
+      const base = getBaseName(file.name);
+      const photoId = photoIdByBase.get(base);
+      if (photoId && isImageFile(file)) {
+        return { file, mediaType: "PHOTO", mediaRole: "image", photoId };
+      }
+      if (photoId && isLiveVideoFile(file)) {
+        return { file, mediaType: "PHOTO", mediaRole: "liveVideo", photoId };
+      }
+      return { file, mediaType: "VIDEO" };
+    });
+
+    const queue: UploadState[] = tasks.map((task) => ({
+      name: task.file.name,
       progress: 0,
       status: "pending",
     }));
     setItems(queue);
     setBusy(true);
 
-    // Convert FileList to array for easier handling
-    const fileArray = Array.from(files);
-
-    // Generate local thumbnails (best-effort)
-    fileArray.forEach((file) => {
-      createVideoThumbnail(file).then((url) => {
-        if (url) updateItem(file.name, { previewUrl: url });
+    // Generate local previews (best-effort)
+    tasks.forEach((task) => {
+      createPreview(task.file).then((url) => {
+        if (url) updateItem(task.file.name, { previewUrl: url });
       });
     });
 
     // Concurrent upload with limited concurrency
-    const uploadQueue = [...fileArray];
+    const uploadQueue = [...tasks];
     const activeUploads: Promise<void>[] = [];
 
     const startNext = async (): Promise<void> => {
       if (uploadQueue.length === 0 || signal.aborted) return;
 
-      const file = uploadQueue.shift()!;
-      await processFile(file, signal);
+      const nextTask = uploadQueue.shift()!;
+      await processFile(nextTask, signal);
       await startNext();
     };
 
     // Start up to MAX_CONCURRENCY parallel upload workers
-    const workers = Math.min(MAX_CONCURRENCY, fileArray.length);
+    const workers = Math.min(MAX_CONCURRENCY, tasks.length);
     for (let i = 0; i < workers; i++) {
       activeUploads.push(startNext());
     }
@@ -417,7 +599,7 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
         <input
           ref={inputRef}
           type="file"
-          accept=".mp4,.mov,.hevc,video/mp4,video/quicktime,video/hevc"
+          accept=".mp4,.mov,.hevc,.jpg,.jpeg,.png,.heic,.heif,video/mp4,video/quicktime,video/hevc,image/jpeg,image/png,image/heic,image/heif"
           multiple
           style={{ display: "none" }}
           onChange={(e) => handleSelect(e.target.files)}
@@ -425,61 +607,7 @@ export default function VideoUploader({ onUploaded, variant = "default" }: Video
       </div>
 
       {error ? <p className="pill pill--error">{error}</p> : null}
-      {items.length > 0 && (
-        <ul className="uploader__list">
-          {items.map((item) => (
-            <li key={item.name} className="uploader__item">
-              <div className="uploader__thumb" aria-hidden="true">
-                {item.previewUrl ? (
-                  <img src={item.previewUrl} alt="" loading="lazy" />
-                ) : (
-                  <span>VIDEO</span>
-                )}
-              </div>
-              <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
-                <div className="ellipsis">{item.name}</div>
-                <div className="progress">
-                  <div
-                    className="progress__bar"
-                    style={{
-                      width: `${item.progress}%`,
-                      background:
-                        item.status === "error"
-                          ? "#ef4444"
-                          : item.status === "skipped"
-                          ? "#9ca3af"
-                          : "#16a34a",
-                    }}
-                  />
-                </div>
-                <div className="muted" style={{ fontSize: "0.85rem" }}>
-                  {item.status === "hashing"
-                    ? "Hashing..."
-                    : item.status === "uploading"
-                    ? `Uploading ${item.progress}%`
-                    : item.status === "done"
-                    ? "Done"
-                    : item.status === "skipped"
-                    ? item.message || "Skipped"
-                    : item.status === "error"
-                    ? item.message || "Failed"
-                    : "Pending"}
-                </div>
-              </div>
-              {item.status !== "uploading" && item.status !== "hashing" ? (
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label="Remove"
-                  onClick={() => removeItem(item.name)}
-                >
-                  ✕
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+      {listNode}
     </div>
   );
 }

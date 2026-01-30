@@ -31,13 +31,14 @@ async function signUrl(
   }
 }
 
-export type VideoLocation = {
+export type MediaLocation = {
   id: string;
   lat: number;
   lon: number;
   thumbnailUrl: string | null;
   originalName?: string;
   captureTime?: string;
+  type?: "VIDEO" | "PHOTO";
 };
 
 // GET: Fetch all videos with location data for map display
@@ -67,57 +68,62 @@ export async function GET() {
 
     const normalizedEmail = email.toLowerCase();
 
-    // Query all videos for this user
-    const res = await ddb.send(
-      new QueryCommand({
-        TableName: tableName,
-        KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
-        ExpressionAttributeValues: {
-          ":email": { S: normalizedEmail },
-          ":skPrefix": { S: "VIDEO#" },
-        },
-      })
-    );
+    const queryByPrefix = async (skPrefix: string) => {
+      const res = await ddb.send(
+        new QueryCommand({
+          TableName: tableName,
+          KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
+          ExpressionAttributeValues: {
+            ":email": { S: normalizedEmail },
+            ":skPrefix": { S: `${skPrefix}#` },
+          },
+        }),
+      );
+      return res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [];
+    };
 
-    const records =
-      res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [];
+    const [videoRecords, photoRecords] = await Promise.all([
+      queryByPrefix("VIDEO"),
+      queryByPrefix("PHOTO"),
+    ]);
 
-    // Filter videos that have location data
-    const videosWithLocation = records
+    const mediaWithLocation = [...videoRecords, ...photoRecords]
       .filter(
         (r) =>
           typeof r.sk === "string" &&
-          r.sk.startsWith("VIDEO#") &&
+          (r.sk.startsWith("VIDEO#") || r.sk.startsWith("PHOTO#")) &&
           r.status !== "DELETING" &&
           r.status !== "DELETED" &&
           typeof r.captureLat === "number" &&
           typeof r.captureLon === "number" &&
           r.captureLat !== 0 &&
-          r.captureLon !== 0
+          r.captureLon !== 0,
       )
-      .map((vid) => ({
-        id: vid.videoId || vid.sk || "",
-        lat: vid.captureLat,
-        lon: vid.captureLon,
-        thumbnailKey: vid.thumbnailKey,
-        thumbnailBucket: vid.thumbnailBucket,
-        originalName: vid.originalName,
-        captureTime: vid.captureTime || vid.createdAt,
+      .map((item) => ({
+        id: item.videoId || item.photoId || item.sk || "",
+        lat: item.captureLat,
+        lon: item.captureLon,
+        thumbnailKey: item.thumbnailKey,
+        thumbnailBucket: item.thumbnailBucket,
+        originalName: item.originalName,
+        captureTime: item.captureTime || item.createdAt,
+        type: item.type || (item.sk?.startsWith("PHOTO#") ? "PHOTO" : "VIDEO"),
       }));
 
     // Generate presigned URLs for thumbnails
-    const locations: VideoLocation[] = await Promise.all(
-      videosWithLocation.map(async (vid) => ({
-        id: vid.id,
-        lat: vid.lat,
-        lon: vid.lon,
+    const locations: MediaLocation[] = await Promise.all(
+      mediaWithLocation.map(async (item) => ({
+        id: item.id,
+        lat: item.lat,
+        lon: item.lon,
         thumbnailUrl: await signUrl(
-          vid.thumbnailBucket || thumbnailBucket,
-          vid.thumbnailKey
+          item.thumbnailBucket || thumbnailBucket,
+          item.thumbnailKey,
         ),
-        originalName: vid.originalName,
-        captureTime: vid.captureTime,
-      }))
+        originalName: item.originalName,
+        captureTime: item.captureTime,
+        type: item.type,
+      })),
     );
 
     // Convert to GeoJSON format for Mapbox
@@ -134,6 +140,7 @@ export async function GET() {
           thumbnailUrl: loc.thumbnailUrl,
           originalName: loc.originalName,
           captureTime: loc.captureTime,
+          type: loc.type,
         },
       })),
     };

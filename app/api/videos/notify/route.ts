@@ -45,21 +45,34 @@ export async function POST(request: Request) {
       size?: number;
       uploadedAt?: string;
       contentHash?: string;
+      mediaType?: "VIDEO" | "PHOTO";
+      mediaRole?: "image" | "liveVideo";
+      videoId?: string;
+      photoId?: string;
     };
     const now = new Date().toISOString();
     const createdAt = body.uploadedAt || now;
-    const videoId = body.key?.split("/").pop() || "";
-    const sk = `VIDEO#${videoId}`;
+    const mediaType = body.mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
+    const mediaRole = body.mediaRole === "liveVideo" ? "liveVideo" : "image";
+    const keyName = body.key?.split("/").pop() || "";
+    const derivedPhotoId = keyName ? keyName.split("_")[0] : "";
+    const mediaId =
+      mediaType === "PHOTO"
+        ? (body.photoId || derivedPhotoId || body.videoId || "")
+        : (body.videoId || keyName);
+    const sk = `${mediaType}#${mediaId}`;
     const contentHash = body.contentHash;
 
-    if (!contentHash) {
+    if (!contentHash && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
       return NextResponse.json(
         { error: "Missing content hash" },
         { status: 400 },
       );
     }
 
-    const reserveSk = `RESERVE#${videoId}`;
+    const reserveSk = mediaType === "PHOTO"
+      ? `RESERVE#PHOTO#${mediaId}`
+      : `RESERVE#${mediaId}`;
     const reserveRes = await ddb.send(
       new GetItemCommand({
         TableName: tableName,
@@ -93,73 +106,143 @@ export async function POST(request: Request) {
     }
 
     try {
-      // Hash lock + video record + profile counters (atomic transaction).
-      await ddb.send(
-        new TransactWriteItemsCommand({
-          TransactItems: [
-            {
-              Delete: {
-                TableName: tableName,
-                Key: {
-                  email: { S: normalizedUser },
-                  sk: { S: reserveSk },
+      if (mediaType === "PHOTO" && mediaRole === "liveVideo") {
+        await ddb.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                Delete: {
+                  TableName: tableName,
+                  Key: {
+                    email: { S: normalizedUser },
+                    sk: { S: reserveSk },
+                  },
                 },
               },
-            },
-            {
-              Put: {
-                TableName: tableName,
-                Item: {
-                  email: { S: normalizedUser },
-                  sk: { S: `HASH#${contentHash}` },
-                  videoId: { S: videoId },
-                  createdAt: { S: now },
-                },
-                ConditionExpression: "attribute_not_exists(sk)",
-              },
-            },
-            {
-              Put: {
-                TableName: tableName,
-                Item: {
-                  email: { S: normalizedUser },
-                  sk: { S: sk },
-                  videoId: { S: videoId },
-                  originalBucket: { S: body.bucket },
-                  originalKey: { S: body.key },
-                  originalName: { S: body.originalName || "" },
-                  contentType: { S: body.contentType || "" },
-                  size: { N: String(reservedSize) },
-                  status: { S: "READY" },
-                  contentHash: { S: contentHash },
-                  createdAt: { S: createdAt },
-                  updatedAt: { S: now },
-                },
-                ConditionExpression: "attribute_not_exists(sk)",
-              },
-            },
-            {
-              Update: {
-                TableName: tableName,
-                Key: {
-                  email: { S: normalizedUser },
-                  sk: { S: "PROFILE" },
-                },
-                UpdateExpression:
-                  "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now ADD usedBytes :size, reservedBytes :negSize, videosCount :one",
-                ConditionExpression: "reservedBytes >= :size",
-                ExpressionAttributeValues: {
-                  ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
-                  ":now": { S: now },
-                  ":size": { N: String(reservedSize) },
-                  ":negSize": { N: String(-reservedSize) },
-                  ":one": { N: "1" },
+              {
+                Update: {
+                  TableName: tableName,
+                  Key: {
+                    email: { S: normalizedUser },
+                    sk: { S: sk },
+                  },
+                  UpdateExpression:
+                    "SET liveVideoBucket = :bucket, liveVideoKey = :key, liveVideoName = :name, " +
+                    "liveVideoContentType = :contentType, liveVideoSize = :liveSize, updatedAt = :now, " +
+                    "#type = if_not_exists(#type, :type), createdAt = if_not_exists(createdAt, :now)",
+                  ExpressionAttributeNames: {
+                    "#type": "type",
+                  },
+                  ExpressionAttributeValues: {
+                    ":bucket": { S: body.bucket },
+                    ":key": { S: body.key },
+                    ":name": { S: body.originalName || "" },
+                    ":contentType": { S: body.contentType || "" },
+                    ":liveSize": { N: String(reservedSize) },
+                    ":now": { S: now },
+                    ":type": { S: "PHOTO" },
+                  },
                 },
               },
-            },
-          ],
-        }),
-      );
+              {
+                Update: {
+                  TableName: tableName,
+                  Key: {
+                    email: { S: normalizedUser },
+                    sk: { S: "PROFILE" },
+                  },
+                  UpdateExpression:
+                    "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now " +
+                    "ADD usedBytes :size, reservedBytes :negSize",
+                  ConditionExpression: "reservedBytes >= :size",
+                  ExpressionAttributeValues: {
+                    ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
+                    ":now": { S: now },
+                    ":size": { N: String(reservedSize) },
+                    ":negSize": { N: String(-reservedSize) },
+                  },
+                },
+              },
+            ],
+          }),
+        );
+      } else {
+        const hashSk = mediaType === "PHOTO" ? `HASH#PHOTO#${contentHash}` : `HASH#${contentHash}`;
+        await ddb.send(
+          new TransactWriteItemsCommand({
+            TransactItems: [
+              {
+                Delete: {
+                  TableName: tableName,
+                  Key: {
+                    email: { S: normalizedUser },
+                    sk: { S: reserveSk },
+                  },
+                },
+              },
+              {
+                Put: {
+                  TableName: tableName,
+                  Item: {
+                    email: { S: normalizedUser },
+                    sk: { S: hashSk },
+                    mediaId: { S: mediaId },
+                    type: { S: mediaType },
+                    createdAt: { S: now },
+                  },
+                  ConditionExpression: "attribute_not_exists(sk)",
+                },
+              },
+              {
+                Put: {
+                  TableName: tableName,
+                  Item: {
+                    email: { S: normalizedUser },
+                    sk: { S: sk },
+                    ...(mediaType === "PHOTO"
+                      ? { photoId: { S: mediaId } }
+                      : { videoId: { S: mediaId } }),
+                    type: { S: mediaType },
+                    originalBucket: { S: body.bucket },
+                    originalKey: { S: body.key },
+                    originalName: { S: body.originalName || "" },
+                    contentType: { S: body.contentType || "" },
+                    size: { N: String(reservedSize) },
+                    status: { S: "READY" },
+                    contentHash: { S: contentHash || "" },
+                    createdAt: { S: createdAt },
+                    updatedAt: { S: now },
+                  },
+                  ConditionExpression: "attribute_not_exists(sk)",
+                },
+              },
+              {
+                Update: {
+                  TableName: tableName,
+                  Key: {
+                    email: { S: normalizedUser },
+                    sk: { S: "PROFILE" },
+                  },
+                  UpdateExpression:
+                    "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now " +
+                    "ADD usedBytes :size, reservedBytes :negSize, #count :one",
+                  ConditionExpression: "reservedBytes >= :size",
+                  ExpressionAttributeNames: {
+                    "#count": mediaType === "PHOTO" ? "photoCount" : "videosCount",
+                  },
+                  ExpressionAttributeValues: {
+                    ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
+                    ":now": { S: now },
+                    ":size": { N: String(reservedSize) },
+                    ":negSize": { N: String(-reservedSize) },
+                    ":one": { N: "1" },
+                  },
+                },
+              },
+            ],
+          }),
+        );
+      }
     } catch (error: any) {
       try {
         await ddb.send(
@@ -196,7 +279,7 @@ export async function POST(request: Request) {
       } catch (releaseErr) {
         console.warn("[videos/notify] Failed to release reservation", releaseErr);
       }
-      if (error?.name === "TransactionCanceledException") {
+      if (error?.name === "TransactionCanceledException" && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
         return NextResponse.json(
           { error: "Duplicate content", duplicate: true },
           { status: 409 },
