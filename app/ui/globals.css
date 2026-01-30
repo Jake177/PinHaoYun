@@ -466,6 +466,20 @@ select.input {
   width: 100%;
 }
 
+.dashboard-header__metrics {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.dashboard-upload-queue {
+  width: 100%;
+}
+
+.dashboard-upload-queue .uploader__list {
+  margin-top: 0.85rem;
+}
+
 .dashboard-header__greeting h1 {
   margin: 0;
 }

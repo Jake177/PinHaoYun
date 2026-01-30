@@ -37,6 +37,33 @@ async function signUrl(
   }
 }
 
+const altKeyForEmailSegment = (key?: string): string | null => {
+  if (!key) return null;
+  const parts = String(key).split("/");
+  if (parts.length < 3) return null;
+  const emailSeg = parts[1];
+
+  // Some older lambdas stored an encoded email segment (e.g. `%40`) while newer code uses `@`.
+  // Provide an alternate key so the client can fall back if a thumb URL 404s due to mismatch.
+  let altSeg: string | null = null;
+  if (emailSeg.includes("@")) {
+    altSeg = encodeURIComponent(emailSeg);
+  } else if (/%[0-9A-Fa-f]{2}/.test(emailSeg)) {
+    try {
+      const decoded = decodeURIComponent(emailSeg);
+      if (decoded !== emailSeg) altSeg = decoded;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!altSeg || altSeg === emailSeg) return null;
+  const altParts = [...parts];
+  altParts[1] = altSeg;
+  const altKey = altParts.join("/");
+  return altKey !== key ? altKey : null;
+};
+
 const toDate = (value?: string) => {
   if (!value) return null;
   const t = Date.parse(value);
@@ -125,6 +152,7 @@ export async function GET(request: NextRequest) {
       .map((item) => ({
         id: item.videoId || item.photoId || item.sk || "",
         type: item.type || (item.sk?.startsWith("PHOTO#") ? "PHOTO" : "VIDEO"),
+        contentType: item.contentType,
         originalKey: item.originalKey,
         originalBucket: item.originalBucket,
         thumbnailKey: item.thumbnailKey,
@@ -143,6 +171,10 @@ export async function GET(request: NextRequest) {
         captureRegion: item.captureRegion,
         captureCountry: item.captureCountry,
         captureAlt: item.captureAlt,
+        orientation: item.orientation,
+        deviceMake: item.deviceMake,
+        deviceModel: item.deviceModel,
+        deviceSoftware: item.deviceSoftware,
         durationSec: item.durationSec,
         width: item.width,
         height: item.height,
@@ -175,14 +207,17 @@ export async function GET(request: NextRequest) {
     // Generate presigned URLs only for the paginated results
     const withUrls = await Promise.all(
       paginated.map(async (item) => {
+        const thumbBucket = item.thumbnailBucket || thumbnailBucket;
+        const thumbKey = item.thumbnailKey;
+        const thumbKeyAlt = altKeyForEmailSegment(thumbKey) || undefined;
         const originalUrl = await signUrl(
           item.originalBucket || originalBucket,
           item.originalKey,
         );
-        const thumbnailUrl = await signUrl(
-          item.thumbnailBucket || thumbnailBucket,
-          item.thumbnailKey,
-        );
+        const thumbnailUrl = await signUrl(thumbBucket, thumbKey);
+        const thumbnailUrlAlt = thumbKeyAlt
+          ? await signUrl(thumbBucket, thumbKeyAlt)
+          : null;
         const liveVideoUrl = await signUrl(
           item.liveVideoBucket || originalBucket,
           item.liveVideoKey,
@@ -191,6 +226,7 @@ export async function GET(request: NextRequest) {
           ...item,
           originalUrl,
           thumbnailUrl,
+          thumbnailUrlAlt,
           liveVideoUrl,
         };
       }),

@@ -7,6 +7,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
+import { normaliseContentType } from "@/app/lib/contentType";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
@@ -62,6 +63,9 @@ export async function POST(request: Request) {
         : (body.videoId || keyName);
     const sk = `${mediaType}#${mediaId}`;
     const contentHash = body.contentHash;
+    const resolvedContentType =
+      normaliseContentType(body.contentType, body.originalName || body.key) ||
+      "application/octet-stream";
 
     if (!contentHash && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
       return NextResponse.json(
@@ -133,16 +137,16 @@ export async function POST(request: Request) {
                   ExpressionAttributeNames: {
                     "#type": "type",
                   },
-                  ExpressionAttributeValues: {
-                    ":bucket": { S: body.bucket },
-                    ":key": { S: body.key },
-                    ":name": { S: body.originalName || "" },
-                    ":contentType": { S: body.contentType || "" },
-                    ":liveSize": { N: String(reservedSize) },
-                    ":now": { S: now },
-                    ":type": { S: "PHOTO" },
+                    ExpressionAttributeValues: {
+                      ":bucket": { S: body.bucket },
+                      ":key": { S: body.key },
+                      ":name": { S: body.originalName || "" },
+                      ":contentType": { S: resolvedContentType },
+                      ":liveSize": { N: String(reservedSize) },
+                      ":now": { S: now },
+                      ":type": { S: "PHOTO" },
+                    },
                   },
-                },
               },
               {
                 Update: {
@@ -206,7 +210,7 @@ export async function POST(request: Request) {
                     originalBucket: { S: body.bucket },
                     originalKey: { S: body.key },
                     originalName: { S: body.originalName || "" },
-                    contentType: { S: body.contentType || "" },
+                    contentType: { S: resolvedContentType },
                     size: { N: String(reservedSize) },
                     status: { S: "READY" },
                     contentHash: { S: contentHash || "" },

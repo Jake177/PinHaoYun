@@ -13,6 +13,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import crypto from "node:crypto";
 import { decodeIdToken } from "@/app/lib/jwt";
+import { normaliseContentType } from "@/app/lib/contentType";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const ALLOWED_VIDEO_EXT = ["mov", "mp4", "hevc", "m4v"];
@@ -98,6 +99,8 @@ export async function POST(request: Request) {
     const ext = fileExt(fileName);
     const isPhoto = mediaType === "PHOTO";
     const isLiveVideo = isPhoto && mediaRole === "liveVideo";
+    const resolvedContentType =
+      normaliseContentType(contentType, fileName) || "application/octet-stream";
     if (isLiveVideo && !requestedPhotoId?.trim()) {
       return NextResponse.json(
         { error: "Missing photo id for live photo video" },
@@ -205,7 +208,7 @@ export async function POST(request: Request) {
       new CreateMultipartUploadCommand({
         Bucket: originalBucket,
         Key: key,
-        ContentType: contentType,
+        ContentType: resolvedContentType,
         StorageClass: "INTELLIGENT_TIERING",
       }),
     );

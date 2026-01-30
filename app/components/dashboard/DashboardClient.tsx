@@ -10,6 +10,7 @@ type VideoItem = {
   type?: "VIDEO" | "PHOTO";
   originalName?: string;
   thumbnailUrl?: string | null;
+  thumbnailUrlAlt?: string | null;
   originalUrl?: string | null;
   liveVideoUrl?: string | null;
   liveVideoSize?: number;
@@ -322,8 +323,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           </div>
         </div>
         <div className="dashboard-header__actions">
-          {profileStats && (
-            <div className="dashboard-stats">
+          <div className="dashboard-header__metrics">
+            {profileStats ? (
+              <div className="dashboard-stats">
               <div className="dashboard-stats__item">
                 <StorageRing
                   usedBytes={profileStats.usedBytes}
@@ -371,7 +373,14 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 </div>
               </div>
             </div>
-          )}
+            ) : null}
+            <div
+              id="dashboard-upload-queue"
+              className="dashboard-upload-queue"
+              aria-live="polite"
+              aria-relevant="additions"
+            />
+          </div>
         </div>
       </header>
 
@@ -450,7 +459,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             </button>
             {!selectionMode ? (
               <div className="panel-actions__swap panel-actions__default">
-                <VideoUploader onUploaded={refreshAll} variant="inline" />
+                <VideoUploader onUploaded={refreshAll} variant="inline" listTargetId="dashboard-upload-queue" />
                 <button
                   type="button"
                   className="pill"

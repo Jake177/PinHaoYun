@@ -8,6 +8,7 @@ type VideoItem = {
   type?: "VIDEO" | "PHOTO";
   originalName?: string;
   thumbnailUrl?: string | null;
+  thumbnailUrlAlt?: string | null;
   originalUrl?: string | null;
   liveVideoUrl?: string | null;
   liveVideoSize?: number;
@@ -94,6 +95,11 @@ const formatBitrate = (value?: number) => {
   return `${mbps.toFixed(2)} Mbps`;
 };
 
+const isHeicLike = (name?: string) => {
+  const lower = (name || "").toLowerCase();
+  return lower.endsWith(".heic") || lower.endsWith(".heif");
+};
+
 export default function VideoGrid({
   videos,
   onRefresh,
@@ -117,6 +123,18 @@ export default function VideoGrid({
   const [deleting, setDeleting] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationSaving, setLocationSaving] = useState(false);
+
+  const previewIsHeicPhoto =
+    preview?.type === "PHOTO" && isHeicLike(preview.originalName);
+  const previewPhotoSrc =
+    preview?.thumbnailUrl ||
+    preview?.thumbnailUrlAlt ||
+    (!previewIsHeicPhoto ? preview?.originalUrl : null) ||
+    null;
+  const hasPreviewMedia =
+    preview?.type === "PHOTO"
+      ? Boolean(preview?.liveVideoUrl || previewPhotoSrc)
+      : Boolean(preview?.originalUrl);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({
@@ -442,9 +460,14 @@ export default function VideoGrid({
           <div key={group.key} className="video-group">
             <h3 className="video-group__title">{renderLabel(group.key)}</h3>
             <div className="video-grid">
-              {group.items.map((video) => {
-                const previewUrl = video.thumbnailUrl || video.originalUrl || "";
-                const isPhoto = video.type === "PHOTO";
+                {group.items.map((video) => {
+                  const isPhoto = video.type === "PHOTO";
+                  const isHeicPhoto = isPhoto && isHeicLike(video.originalName);
+                  const previewUrl =
+                    video.thumbnailUrl ||
+                    video.thumbnailUrlAlt ||
+                    (!isHeicPhoto ? video.originalUrl : null) ||
+                    "";
                 const hasLiveVideo = Boolean(video.liveVideoUrl);
                 const isSelecting = Boolean(selectionMode && onToggleSelect);
                 const isSelected = Boolean(isSelecting && selectedIds?.has(video.id));
@@ -497,7 +520,19 @@ export default function VideoGrid({
                       {previewUrl ? (
                         <>
                           {isPhoto ? (
-                            <img src={previewUrl} alt="" loading="lazy" />
+                            <img
+                              src={previewUrl}
+                              data-alt-src={video.thumbnailUrlAlt || undefined}
+                              alt=""
+                              loading="lazy"
+                              onError={(e) => {
+                                const img = e.currentTarget;
+                                const altSrc = img.dataset.altSrc;
+                                if (altSrc && img.src !== altSrc) {
+                                  img.src = altSrc;
+                                }
+                              }}
+                            />
                           ) : (
                             <video
                               src={previewUrl}
@@ -566,7 +601,7 @@ export default function VideoGrid({
                 Close
               </button>
             </header>
-            {preview.originalUrl ? (
+            {hasPreviewMedia ? (
               preview.type === "PHOTO" ? (
                 preview.liveVideoUrl ? (
                   <video
@@ -575,24 +610,37 @@ export default function VideoGrid({
                     controls
                     playsInline
                     preload="metadata"
-                    poster={preview.thumbnailUrl || preview.originalUrl || undefined}
+                    poster={
+                      preview.thumbnailUrl ||
+                      preview.thumbnailUrlAlt ||
+                      preview.originalUrl ||
+                      undefined
+                    }
                     className="preview-video"
                   />
                 ) : (
                   <img
-                    src={preview.originalUrl || preview.thumbnailUrl || ""}
+                    src={previewPhotoSrc || ""}
+                    data-alt-src={preview.thumbnailUrlAlt || undefined}
                     alt={preview.originalName || "Photo"}
                     className="preview-image"
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      const altSrc = img.dataset.altSrc;
+                      if (altSrc && img.src !== altSrc) {
+                        img.src = altSrc;
+                      }
+                    }}
                   />
                 )
               ) : (
                 <video
                   key={previewKey || preview.id}
-                  src={preview.originalUrl}
+                  src={preview.originalUrl || undefined}
                   controls
                   playsInline
                   preload="metadata"
-                  poster={preview.thumbnailUrl || undefined}
+                  poster={preview.thumbnailUrl || preview.thumbnailUrlAlt || undefined}
                   className="preview-video"
                 />
               )

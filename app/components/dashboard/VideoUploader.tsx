@@ -429,74 +429,12 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     const getBaseName = (name: string) => name.replace(/\.[^/.]+$/, "");
     const isImageFile = (file: File) => {
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
-      const listContent = items.length > 0 ? (
-    <ul className="uploader__list">
-      {items.map((item) => (
-        <li key={item.name} className="uploader__item">
-          <div className="uploader__thumb" aria-hidden="true">
-            {item.previewUrl ? (
-              <img src={item.previewUrl} alt="" loading="lazy" />
-            ) : (
-              <span>VIDEO</span>
-            )}
-          </div>
-          <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
-            <div className="ellipsis">{item.name}</div>
-            <div className="progress">
-              <div
-                className="progress__bar"
-                style={{
-                  width: `${item.progress}%`,
-                  background:
-                    item.status === "error"
-                      ? "#ef4444"
-                      : item.status === "skipped"
-                      ? "#9ca3af"
-                      : "#16a34a",
-                }}
-              />
-            </div>
-            <div className="muted" style={{ fontSize: "0.85rem" }}>
-              {item.status === "hashing"
-                ? "Hashing..."
-                : item.status === "uploading"
-                ? `Uploading ${item.progress}%`
-                : item.status === "done"
-                ? "Done"
-                : item.status === "skipped"
-                ? item.message || "Skipped"
-                : item.status === "error"
-                ? item.message || "Failed"
-                : "Pending"}
-            </div>
-          </div>
-          {item.status !== "uploading" && item.status !== "hashing" ? (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Remove"
-              onClick={() => removeItem(item.name)}
-            >
-              ✕
-            </button>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  ) : null;
-
-  const listNode =
-    listContent && listTargetId
-      ? listHost
-        ? createPortal(listContent, listHost)
-        : null
-      : listContent;
-
-  return (
+      return (
         ALLOWED_IMAGE_TYPES.includes(file.type) ||
         ["jpg", "jpeg", "png", "heic", "heif"].includes(ext)
       );
     };
+
     const isLiveVideoFile = (file: File) => {
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       return LIVE_VIDEO_TYPES.includes(file.type) || ext === "mov";
@@ -569,6 +507,63 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     setBusy(false);
   };
 
+
+  const listContent = items.length > 0 ? (
+    <ul className="uploader__list">
+      {items.map((item) => (
+        <li key={item.name} className="uploader__item">
+          <div className="uploader__thumb" aria-hidden="true">
+            {item.previewUrl ? (
+              <img src={item.previewUrl} alt="" loading="lazy" />
+            ) : (
+              <span>VIDEO</span>
+            )}
+          </div>
+          <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
+            <div className="ellipsis">{item.name}</div>
+            <div className="progress">
+              <div
+                className="progress__bar"
+                style={{
+                  width: `${item.progress}%`,
+                  background:
+                    item.status === "error"
+                      ? "#ef4444"
+                      : item.status === "skipped"
+                      ? "#9ca3af"
+                      : "#16a34a",
+                }}
+              />
+            </div>
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              {item.status === "hashing"
+                ? "Hashing..."
+                : item.status === "uploading"
+                ? `Uploading ${item.progress}%`
+                : item.status === "done"
+                ? "Done"
+                : item.status === "skipped"
+                ? item.message || "Skipped"
+                : item.status === "error"
+                ? item.message || "Failed"
+                : "Pending"}
+            </div>
+          </div>
+          {item.status !== "uploading" && item.status !== "hashing" ? (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Remove"
+              onClick={() => removeItem(item.name)}
+            >
+              ✕
+            </button>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  ) : null;
+
   return (
     <div className={`uploader ${variant === "inline" ? "uploader--inline" : ""}`}>
       <div className="uploader__bar">
@@ -607,7 +602,13 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
       </div>
 
       {error ? <p className="pill pill--error">{error}</p> : null}
-      {listNode}
+      {listContent
+        ? listTargetId
+          ? listHost
+            ? createPortal(listContent, listHost)
+            : null
+          : listContent
+        : null}
     </div>
   );
 }
