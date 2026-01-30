@@ -12,7 +12,7 @@ import {
 const region = process.env.COGNITO_REGION || process.env.NEXT_PUBLIC_COGNITO_REGION;
 const userPoolId = process.env.COGNITO_USER_POOL_ID || process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-const secretId = process.env.COGNITO_SECRET_ID;
+const secretId = process.env.COGNITO_SECRET_ID || "pinhaoyun/secret";
 const secretsClient = new SecretsManagerClient({
   region: process.env.AWS_REGION || "ap-southeast-2",
 });
