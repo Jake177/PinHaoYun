@@ -147,10 +147,23 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     }
   }, [buildDateQuery]);
 
+  const loadMoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const loadMore = useCallback(() => {
-    if (!loadingMoreRef.current && hasMore) {
-      fetchVideos(false);
+    // Debounce and prevent duplicate calls
+    if (loadingMoreRef.current || !hasMore || !nextCursorRef.current) return;
+    
+    // Clear any pending timeout
+    if (loadMoreTimeoutRef.current) {
+      clearTimeout(loadMoreTimeoutRef.current);
     }
+    
+    // Debounce with 100ms delay to prevent rapid firing
+    loadMoreTimeoutRef.current = setTimeout(() => {
+      if (!loadingMoreRef.current && hasMore && nextCursorRef.current) {
+        fetchVideos(false);
+      }
+    }, 100);
   }, [fetchVideos, hasMore]);
 
   // Initial load and refresh when filter changes.
@@ -327,54 +340,59 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           <div className="dashboard-header__metrics">
             {profileStats ? (
               <div className="dashboard-stats">
-              <div className="dashboard-stats__item">
-                <StorageRing
-                  usedBytes={profileStats.usedBytes}
-                  quotaBytes={profileStats.quotaBytes}
-                  size={48}
-                  strokeWidth={5}
-                />
-                <div className="dashboard-stats__text">
-                  <span className="dashboard-stats__label">Storage</span>
-                  <span className="dashboard-stats__value">
-                    {formatBytes(profileStats.usedBytes)} / {formatBytes(profileStats.quotaBytes)}
+                <div className="dashboard-stats__item">
+                  <StorageRing
+                    usedBytes={profileStats.usedBytes}
+                    quotaBytes={profileStats.quotaBytes}
+                    size={48}
+                    strokeWidth={5}
+                  />
+                  <div className="dashboard-stats__text">
+                    <span className="dashboard-stats__label">Storage</span>
+                    <span className="dashboard-stats__value">
+                      {formatBytes(profileStats.usedBytes)} / {formatBytes(profileStats.quotaBytes)}
+                    </span>
+                  </div>
+                </div>
+                <div className="dashboard-stats__divider" />
+                <div className="dashboard-stats__item">
+                  <span className="material-symbols-outlined">
+                    video_camera_front
                   </span>
+                  <div className="dashboard-stats__text">
+                    <span className="dashboard-stats__label">Videos</span>
+                    <span className="dashboard-stats__value">{profileStats.videosCount}</span>
+                  </div>
                 </div>
-              </div>
-              <div className="dashboard-stats__divider" />
-              <div className="dashboard-stats__item">
-                <span className="material-symbols-outlined">
-                  video_camera_front
-                </span>
-                <div className="dashboard-stats__text">
-                  <span className="dashboard-stats__label">Videos</span>
-                  <span className="dashboard-stats__value">{profileStats.videosCount}</span>
-                </div>
-              </div>
-              <div className="dashboard-stats__divider" />
-              <div className="dashboard-stats__item">
-                <span className="material-symbols-outlined">
-                  photo_camera
-                </span>
-                <div className="dashboard-stats__text">
-                  <span className="dashboard-stats__label">Photos</span>
-                  <span className="dashboard-stats__value">{profileStats.photoCount}</span>
-                </div>
-              </div>
-              <div className="dashboard-stats__divider" />
-              <div className="dashboard-stats__item">
-                <span className="material-symbols-outlined">
-                  collections
-                </span>
-                <div className="dashboard-stats__text">
-                  <span className="dashboard-stats__label">Total</span>
-                  <span className="dashboard-stats__value">
-                    {profileStats.videosCount + profileStats.photoCount}
+                <div className="dashboard-stats__divider" />
+                <div className="dashboard-stats__item">
+                  <span className="material-symbols-outlined">
+                    photo_camera
                   </span>
+                  <div className="dashboard-stats__text">
+                    <span className="dashboard-stats__label">Photos</span>
+                    <span className="dashboard-stats__value">{profileStats.photoCount}</span>
+                  </div>
+                </div>
+                <div className="dashboard-stats__divider" />
+                <div className="dashboard-stats__item">
+                  <span className="material-symbols-outlined">
+                    collections
+                  </span>
+                  <div className="dashboard-stats__text">
+                    <span className="dashboard-stats__label">Total</span>
+                    <span className="dashboard-stats__value">
+                      {profileStats.videosCount + profileStats.photoCount}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
             ) : null}
+            <VideoUploader
+              onUploaded={refreshAll}
+              variant="inline"
+              listTargetId="dashboard-upload-queue"
+            />
             <div
               id="dashboard-upload-queue"
               className="dashboard-upload-queue"
@@ -386,7 +404,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       </header>
 
       <section className="dashboard-panel">
-          <div className="panel-heading">
+        <div className="panel-heading">
           <div className="panel-title">
             <h2>My Library</h2>
             <div className="panel-filters">
@@ -460,7 +478,6 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
             </button>
             {!selectionMode ? (
               <div className="panel-actions__swap panel-actions__default">
-                <VideoUploader onUploaded={refreshAll} variant="inline" listTargetId="dashboard-upload-queue" />
                 <button
                   type="button"
                   className="pill"

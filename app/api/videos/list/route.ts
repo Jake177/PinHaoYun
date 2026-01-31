@@ -244,22 +244,26 @@ export async function GET(request: NextRequest) {
 
     // Prepare next cursor
     let nextCursor: string | null = null;
-    if (videoRes.lastKey || photoRes.lastKey) {
+    const hasMoreVideo = Boolean(videoRes.lastKey);
+    const hasMorePhoto = Boolean(photoRes.lastKey);
+    
+    // Only set cursor if there's actually more data to fetch
+    if (hasMoreVideo || hasMorePhoto) {
       nextCursor = Buffer.from(
         JSON.stringify({
-          video: videoRes.lastKey,
-          photo: photoRes.lastKey,
+          video: videoRes.lastKey || null,
+          photo: photoRes.lastKey || null,
         }),
       ).toString("base64");
-    } else if (filtered.length > limit) {
-      // If we filtered and have more items locally, we need to continue from last item.
-      // This is a simplified approach - for production you might need a more robust solution.
     }
+
+    // hasMore is true only if we have a valid next cursor
+    const hasMore = Boolean(nextCursor);
 
     return NextResponse.json({
       videos: withUrls,
       nextCursor,
-      hasMore: !!nextCursor || filtered.length > limit,
+      hasMore,
     });
   } catch (error: any) {
     console.error("[videos/list] error", error);

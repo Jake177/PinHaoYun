@@ -114,10 +114,8 @@ export default function VideoGrid({
   onUpdateLocation,
 }: VideoGridProps) {
   const [preview, setPreview] = useState<VideoItem | null>(null);
-  const [showMeta, setShowMeta] = useState(false);
+  const [showMeta, setShowMeta] = useState(true);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
-  const [sheetTranslate, setSheetTranslate] = useState(100);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showLocationEditor, setShowLocationEditor] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -141,205 +139,70 @@ export default function VideoGrid({
       ? Boolean(preview?.liveVideoUrl || previewPhotoSrc)
       : Boolean(preview?.originalUrl);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef({
-    startY: 0,
-    startTranslate: 100,
-    height: 1,
-    currentTranslate: 100,
-    moved: false,
-    active: false,
-    pointerId: -1,
-    captured: false,
-  });
+  const loadMoreInFlightRef = useRef(false);
 
-  const SHEET_TRANSLATE = {
-    full: 0,
-    half: 45,
-    closed: 100,
+  const toggleDetails = () => {
+    setShowMeta((prev) => !prev);
   };
 
-  const isInteractiveTarget = (target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) return false;
-    return Boolean(
-      target.closest("button, a, input, textarea, select"),
-    );
-  };
+  const handleLoadMore = useCallback(() => {
+    if (!onLoadMore || !hasMore) return;
+    if (loadingMore || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
+    onLoadMore();
+  }, [hasMore, loadingMore, onLoadMore]);
+
+  useEffect(() => {
+    if (!loadingMore) {
+      loadMoreInFlightRef.current = false;
+    }
+  }, [loadingMore]);
 
   // Infinite scroll observer
   useEffect(() => {
-    if (!hasMore || !onLoadMore) return;
+    if (!hasMore || !onLoadMore || loadingMore) return;
 
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMore && !loadingMore) {
-          onLoadMore();
+        if (entry.isIntersecting && !loadMoreInFlightRef.current) {
+          // Debounce the callback
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            handleLoadMore();
+          }, 150);
         }
       },
-      { rootMargin: "400px" }
+      { rootMargin: "200px", threshold: 0 }
     );
 
     observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, onLoadMore]);
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      observer.disconnect();
+    };
+  }, [handleLoadMore, hasMore, onLoadMore]);
 
   useEffect(() => {
-    // When preview changes, automatically open the metadata sheet to full size
+    // When preview changes, reset states
     if (preview) {
-      setShowMeta(true);
+      setShowMeta(false);
       setShowDeleteConfirm(false);
       setShowLocationEditor(false);
       setDeleteError(null);
       setLocationError(null);
-      setSheetTranslate(SHEET_TRANSLATE.full);
-      dragRef.current.currentTranslate = SHEET_TRANSLATE.full;
     } else {
       setShowMeta(false);
       setShowDeleteConfirm(false);
       setShowLocationEditor(false);
       setDeleteError(null);
       setLocationError(null);
-      setSheetTranslate(SHEET_TRANSLATE.closed);
-      dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
     }
   }, [previewKey]);
-
-  const setTranslate = (value: number) => {
-    dragRef.current.currentTranslate = value;
-    setSheetTranslate(value);
-  };
-
-  const openSheet = () => {
-    setShowMeta(true);
-    setTranslate(SHEET_TRANSLATE.half);
-  };
-
-  const closeSheet = () => {
-    setTranslate(SHEET_TRANSLATE.closed);
-    setShowMeta(false);
-  };
-
-  const toggleSheet = () => {
-    if (showMeta) {
-      closeSheet();
-    } else {
-      openSheet();
-    }
-  };
-
-  const snapSheet = (translate: number) => {
-    if (translate > 70) {
-      closeSheet();
-      return;
-    }
-    setShowMeta(true);
-    if (translate < 20) {
-      setTranslate(SHEET_TRANSLATE.full);
-    } else {
-      setTranslate(SHEET_TRANSLATE.half);
-    }
-  };
-
-  const startSheetDrag = (
-    event: React.PointerEvent<HTMLElement>,
-    capturePointer: boolean,
-  ) => {
-    if (!showMeta) return;
-    const sheet = sheetRef.current;
-    if (!sheet) return;
-    if (isInteractiveTarget(event.target)) return;
-    dragRef.current.startY = event.clientY;
-    dragRef.current.startTranslate = sheetTranslate;
-    dragRef.current.currentTranslate = sheetTranslate;
-    dragRef.current.height = sheet.getBoundingClientRect().height || 1;
-    dragRef.current.moved = false;
-    dragRef.current.active = true;
-    dragRef.current.pointerId = event.pointerId;
-    dragRef.current.captured = false;
-    if (capturePointer) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragRef.current.captured = true;
-    }
-  };
-
-  const handleSheetPointerMove = (
-    event: React.PointerEvent<HTMLElement>,
-  ) => {
-    if (!dragRef.current.active) return;
-    if (event.pointerId !== dragRef.current.pointerId) return;
-    const delta = event.clientY - dragRef.current.startY;
-    if (Math.abs(delta) > 4) {
-      dragRef.current.moved = true;
-      if (!isSheetDragging) {
-        setIsSheetDragging(true);
-        if (!dragRef.current.captured) {
-          event.currentTarget.setPointerCapture(event.pointerId);
-          dragRef.current.captured = true;
-        }
-      }
-    }
-    if (!dragRef.current.moved) return;
-    const next =
-      dragRef.current.startTranslate +
-      (delta / dragRef.current.height) * 100;
-    const clamped = Math.min(
-      SHEET_TRANSLATE.closed,
-      Math.max(SHEET_TRANSLATE.full, next),
-    );
-    setTranslate(clamped);
-  };
-
-  const handleSheetPointerUp = (
-    event: React.PointerEvent<HTMLElement>,
-  ) => {
-    if (!dragRef.current.active) return;
-    if (event.pointerId !== dragRef.current.pointerId) return;
-    if (dragRef.current.captured) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const moved = dragRef.current.moved;
-    dragRef.current.active = false;
-    dragRef.current.captured = false;
-    dragRef.current.pointerId = -1;
-    setIsSheetDragging(false);
-    if (moved) {
-      snapSheet(dragRef.current.currentTranslate);
-    }
-  };
-
-  const handleSheetPointerCancel = (
-    event: React.PointerEvent<HTMLElement>,
-  ) => {
-    if (!dragRef.current.active) return;
-    if (event.pointerId !== dragRef.current.pointerId) return;
-    if (dragRef.current.captured) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const moved = dragRef.current.moved;
-    dragRef.current.active = false;
-    dragRef.current.captured = false;
-    dragRef.current.pointerId = -1;
-    setIsSheetDragging(false);
-    if (moved) {
-      snapSheet(dragRef.current.currentTranslate);
-    }
-  };
-
-  const handleSheetToggle = () => {
-    if (!showMeta) return;
-    if (dragRef.current.moved) {
-      dragRef.current.moved = false;
-      return;
-    }
-    if (sheetTranslate <= 10) {
-      setTranslate(SHEET_TRANSLATE.half);
-    } else {
-      setTranslate(SHEET_TRANSLATE.full);
-    }
-  };
 
   const groups = useMemo(() => {
     const buckets: Record<string, VideoItem[]> = {};
@@ -384,15 +247,6 @@ export default function VideoGrid({
   useEffect(() => {
     const handleResume = () => {
       handleClose();
-      setIsSheetDragging(false);
-      setSheetTranslate(SHEET_TRANSLATE.closed);
-      dragRef.current.startY = 0;
-      dragRef.current.startTranslate = SHEET_TRANSLATE.closed;
-      dragRef.current.currentTranslate = SHEET_TRANSLATE.closed;
-      dragRef.current.moved = false;
-      dragRef.current.active = false;
-      dragRef.current.captured = false;
-      dragRef.current.pointerId = -1;
     };
 
     window.addEventListener("app:resume", handleResume);
@@ -589,7 +443,7 @@ export default function VideoGrid({
             <button
               type="button"
               className="pill"
-              onClick={onLoadMore}
+              onClick={handleLoadMore}
             >
               Load more
             </button>
@@ -623,11 +477,40 @@ export default function VideoGrid({
               </button>
             </header>
             {hasPreviewMedia ? (
-              preview.type === "PHOTO" ? (
-                <div className="preview-container">
-                  {preview.liveVideoUrl ? (
-                    // For Live Photos: show photo with video toggle
-                    <>
+              <div className="preview-media-wrapper">
+                {preview.type === "PHOTO" ? (
+                  <div className="preview-container">
+                    {preview.liveVideoUrl ? (
+                      // For Live Photos: show photo with video toggle
+                      <>
+                        <img
+                          src={previewPhotoSrc || ""}
+                          data-alt-src={preview.thumbnailUrlAlt || undefined}
+                          alt={preview.originalName || "Photo"}
+                          className="preview-image"
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            const altSrc = img.dataset.altSrc;
+                            if (altSrc && img.src !== altSrc) {
+                              img.src = altSrc;
+                            }
+                          }}
+                        />
+                        <div className="live-photo-info">
+                          <span className="live-badge">Live Photo</span>
+                          <a
+                            href={preview.liveVideoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="pill pill--primary"
+                            title="Open dynamic video in new tab"
+                          >
+                            <span className="material-symbols-outlined">play_arrow</span>
+                            Play motion
+                          </a>
+                        </div>
+                      </>
+                    ) : (
                       <img
                         src={previewPhotoSrc || ""}
                         data-alt-src={preview.thumbnailUrlAlt || undefined}
@@ -641,60 +524,104 @@ export default function VideoGrid({
                           }
                         }}
                       />
-                      <div className="live-photo-info">
-                        <span className="live-badge">Live Photo</span>
-                        <a
-                          href={preview.liveVideoUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="pill pill--primary"
-                          title="Open dynamic video in new tab"
-                        >
-                          <span className="material-symbols-outlined">play_arrow</span>
-                          Play motion
-                        </a>
-                      </div>
-                    </>
-                  ) : (
-                    <img
-                      src={previewPhotoSrc || ""}
-                      data-alt-src={preview.thumbnailUrlAlt || undefined}
-                      alt={preview.originalName || "Photo"}
-                      className="preview-image"
-                      onError={(e) => {
-                        const img = e.currentTarget;
-                        const altSrc = img.dataset.altSrc;
-                        if (altSrc && img.src !== altSrc) {
-                          img.src = altSrc;
-                        }
-                      }}
-                    />
-                  )}
+                    )}
+                  </div>
+                ) : (
+                  <video
+                    key={previewKey || preview.id}
+                    src={preview.originalUrl || undefined}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    poster={preview.thumbnailUrl || preview.thumbnailUrlAlt || undefined}
+                    className="preview-video"
+                  />
+                )}
+                {/* Overlay details panel */}
+                <div
+                  className={`preview-details ${showMeta ? "preview-details--open" : ""}`}
+                  aria-expanded={showMeta}
+                >
+                  <ul className="preview-details__list">
+                    <li>
+                      <span className="detail-label">Captured</span>
+                      <span className="detail-value">{formatDate(preview.captureTime || preview.createdAt) || "Unknown"}</span>
+                    </li>
+                    <li>
+                      <span className="detail-label">File size</span>
+                      <span className="detail-value">{formatSize(preview.size) || "Unknown"}</span>
+                    </li>
+                    {preview.type !== "PHOTO" ? (
+                      <>
+                        <li>
+                          <span className="detail-label">Duration</span>
+                          <span className="detail-value">{formatDuration(preview.durationSec) || "Unknown"}</span>
+                        </li>
+                        <li>
+                          <span className="detail-label">Resolution</span>
+                          <span className="detail-value">
+                            {preview.width && preview.height
+                              ? `${preview.width} × ${preview.height}`
+                              : "Unknown"}
+                          </span>
+                        </li>
+                        <li>
+                          <span className="detail-label">Frame rate</span>
+                          <span className="detail-value">{formatFps(preview.fps) || "Unknown"}</span>
+                        </li>
+                        <li>
+                          <span className="detail-label">Codec</span>
+                          <span className="detail-value">{preview.codec || "Unknown"}</span>
+                        </li>
+                        <li>
+                          <span className="detail-label">Bitrate</span>
+                          <span className="detail-value">{formatBitrate(preview.bitrate) || "Unknown"}</span>
+                        </li>
+                      </>
+                    ) : (
+                      <li>
+                        <span className="detail-label">Resolution</span>
+                        <span className="detail-value">
+                          {preview.width && preview.height
+                            ? `${preview.width} × ${preview.height}`
+                            : "Unknown"}
+                        </span>
+                      </li>
+                    )}
+                    <li>
+                      <span className="detail-label">Device</span>
+                      <span className="detail-value">
+                        {preview.deviceMake || preview.deviceModel
+                          ? `${preview.deviceMake || ""} ${preview.deviceModel || ""}`.trim()
+                          : "Unknown"}
+                      </span>
+                    </li>
+                    <li>
+                      <span className="detail-label">Software</span>
+                      <span className="detail-value">{preview.deviceSoftware || "Unknown"}</span>
+                    </li>
+                    <li>
+                      <span className="detail-label">Location</span>
+                      <span className="detail-value">
+                        {preview.captureAddress ||
+                          (preview.captureLat != null && preview.captureLon != null
+                            ? `${preview.captureLat.toFixed(6)}, ${preview.captureLon.toFixed(6)}`
+                            : "Unknown")}
+                      </span>
+                    </li>
+                  </ul>
                 </div>
-              ) : (
-                <video
-                  key={previewKey || preview.id}
-                  src={preview.originalUrl || undefined}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  poster={preview.thumbnailUrl || preview.thumbnailUrlAlt || undefined}
-                  className="preview-video"
-                />
-              )
+              </div>
             ) : (
               <div className="empty-state">No preview available</div>
             )}
-            <div
-              className={`metadata-toggle preview-actions ${
-                showMeta ? "metadata-toggle--inactive" : ""
-              }`}
-            >
+            {/* Action buttons */}
+            <div className="preview-actions">
               <div className="preview-actions__bar">
                 <button
                   type="button"
-                  className="pill pill--icon"
-                  onClick={toggleSheet}
+                  className={`pill pill--icon ${showMeta ? "pill--active" : ""}`}
+                  onClick={toggleDetails}
                   aria-label={showMeta ? "Hide details" : "Show details"}
                   aria-pressed={showMeta}
                   title={showMeta ? "Hide details" : "Show details"}
@@ -740,87 +667,6 @@ export default function VideoGrid({
                 {deleteError}
               </p>
             ) : null}
-            <div
-              ref={sheetRef}
-              className={`metadata-panel ${showMeta ? "metadata-panel--open" : ""} ${
-                isSheetDragging ? "metadata-panel--dragging" : ""
-              }`}
-              aria-expanded={showMeta}
-              style={
-                {
-                  "--sheet-translate": `${sheetTranslate}%`,
-                } as React.CSSProperties
-              }
-              onPointerDown={(event) => startSheetDrag(event, false)}
-              onPointerMove={handleSheetPointerMove}
-              onPointerUp={handleSheetPointerUp}
-              onPointerCancel={handleSheetPointerCancel}
-            >
-              <div className="metadata-sheet__header">
-                <button
-                  type="button"
-                  className="metadata-sheet__handle"
-                  onClick={handleSheetToggle}
-                  onPointerDown={(event) => startSheetDrag(event, true)}
-                  onPointerMove={handleSheetPointerMove}
-                  onPointerUp={handleSheetPointerUp}
-                  onPointerCancel={handleSheetPointerCancel}
-                  aria-label="Toggle sheet height"
-                >
-                  <span />
-                </button>
-                <span className="metadata-sheet__title">Details</span>
-                <button
-                  type="button"
-                  className="metadata-sheet__close"
-                  onClick={closeSheet}
-                  aria-label="Close details"
-                >
-                  <span className="material-symbols-outlined">close_small</span>
-                </button>
-              </div>
-              <ul>
-                <li>Captured: {formatDate(preview.captureTime || preview.createdAt) || "Unknown"}</li>
-                <li>File size: {formatSize(preview.size)}</li>
-                {preview.type !== "PHOTO" ? (
-                  <>
-                    <li>Duration: {formatDuration(preview.durationSec) || "Unknown"}</li>
-                    <li>
-                      Resolution:
-                      {preview.width && preview.height
-                        ? `${preview.width} × ${preview.height}`
-                        : "Unknown"}
-                    </li>
-                    <li>Frame rate: {formatFps(preview.fps) || "Unknown"}</li>
-                    <li>Codec: {preview.codec || "Unknown"}</li>
-                    <li>Bitrate: {formatBitrate(preview.bitrate) || "Unknown"}</li>
-                  </>
-                ) : (
-                  <li>
-                    Resolution:
-                    {preview.width && preview.height
-                      ? `${preview.width} × ${preview.height}`
-                      : "Unknown"}
-                  </li>
-                )}
-                <li>
-                  Device:
-                  {preview.deviceMake || preview.deviceModel
-                    ? `${preview.deviceMake || ""} ${preview.deviceModel || ""}`.trim()
-                    : "Unknown"}
-                </li>
-                <li>
-                  Software: {preview.deviceSoftware || "Unknown"}
-                </li>
-                <li>
-                  Location:
-                  {preview.captureAddress ||
-                    (preview.captureLat != null && preview.captureLon != null
-                      ? `${preview.captureLat}, ${preview.captureLon}`
-                      : "Unknown")}
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
       ) : null}

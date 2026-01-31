@@ -12,6 +12,7 @@ const HASH_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB - only hash first chunk for sp
 const PART_SIZE = 10 * 1024 * 1024; // 10MB multipart size
 
 type UploadState = {
+  id: string;
   name: string;
   progress: number;
   status: "pending" | "hashing" | "uploading" | "done" | "skipped" | "error";
@@ -20,6 +21,7 @@ type UploadState = {
 };
 
 type UploadTask = {
+  id: string;
   file: File;
   mediaType: "VIDEO" | "PHOTO";
   mediaRole?: "image" | "liveVideo";
@@ -38,7 +40,7 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [listHost, setListHost] = useState<HTMLElement | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const abortControllersRef = useRef(new Map<string, AbortController>());
   const removeTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
@@ -49,31 +51,32 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     setListHost(document.getElementById(listTargetId));
   }, [listTargetId]);
 
-  const clearRemoveTimer = (name: string) => {
-    const timer = removeTimersRef.current.get(name);
+  const clearRemoveTimer = (id: string) => {
+    const timer = removeTimersRef.current.get(id);
     if (timer) {
       clearTimeout(timer);
-      removeTimersRef.current.delete(name);
+      removeTimersRef.current.delete(id);
     }
   };
 
-  const removeItem = (name: string) => {
-    clearRemoveTimer(name);
-    setItems((prev) => prev.filter((item) => item.name !== name));
+  const removeItem = (id: string) => {
+    clearRemoveTimer(id);
+    abortControllersRef.current.delete(id);
+    setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const updateItem = useCallback((name: string, patch: Partial<UploadState>) => {
+  const updateItem = useCallback((id: string, patch: Partial<UploadState>) => {
     setItems((prev) =>
-      prev.map((item) => (item.name === name ? { ...item, ...patch } : item)),
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
   }, []);
 
-  const scheduleAutoRemove = (name: string) => {
-    if (removeTimersRef.current.has(name)) return;
+  const scheduleAutoRemove = (id: string) => {
+    if (removeTimersRef.current.has(id)) return;
     const timer = setTimeout(() => {
-      removeItem(name);
+      removeItem(id);
     }, 5000);
-    removeTimersRef.current.set(name, timer);
+    removeTimersRef.current.set(id, timer);
   };
 
   const createPreview = (file: File): Promise<string | null> =>
@@ -254,8 +257,8 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     });
 
   // Process a single file upload
-  const processFile = async (task: UploadTask, signal?: AbortSignal): Promise<void> => {
-    const { file, mediaType, mediaRole = "image", photoId } = task;
+  const processFile = async (task: UploadTask, signal: AbortSignal): Promise<void> => {
+    const { id, file, mediaType, mediaRole = "image", photoId } = task;
     const fileName = file.name;
     let uploadId: string | undefined;
     let key: string | undefined;
@@ -275,7 +278,7 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
           : isImage
         : isVideo;
     if (!typeAllowed || file.size > MAX_BYTES) {
-      updateItem(fileName, {
+      updateItem(id, {
         status: "error",
         message: "Unsupported file type or file size is too large.",
       });
@@ -283,22 +286,22 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     }
 
     // Hash phase
-    updateItem(fileName, { status: "hashing" });
+    updateItem(id, { status: "hashing" });
     let contentHash = "";
     try {
       contentHash = await computeQuickHash(file);
     } catch {
-      updateItem(fileName, { status: "error", message: "Failed to calculate checksum." });
+      updateItem(id, { status: "error", message: "Failed to calculate checksum." });
       return;
     }
 
     if (signal?.aborted) {
-      updateItem(fileName, { status: "error", message: "Cancelled." });
+      updateItem(id, { status: "error", message: "Cancelled." });
       return;
     }
 
     // Upload phase
-    updateItem(fileName, { status: "uploading", progress: 0 });
+    updateItem(id, { status: "uploading", progress: 0 });
 
     try {
       const initResp = await requestJson<{
@@ -325,7 +328,7 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
       const { duplicate } = initResp;
 
       if (duplicate) {
-        updateItem(fileName, {
+        updateItem(id, {
           status: "skipped",
           progress: 100,
           message: "Duplicate detected. Skipped.",
@@ -364,7 +367,7 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
           blob,
           (loaded) => {
             const pct = Math.round(((uploadedBytes + loaded) / file.size) * 100);
-            updateItem(fileName, { progress: pct });
+            updateItem(id, { progress: pct });
           },
           signal,
         );
@@ -397,8 +400,8 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
         signal,
       );
 
-      updateItem(fileName, { progress: 100, status: "done" });
-      scheduleAutoRemove(fileName);
+      updateItem(id, { progress: 100, status: "done" });
+      scheduleAutoRemove(id);
     } catch (err: any) {
       if (uploadId && key) {
         try {
@@ -408,10 +411,10 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
         }
       }
       if (err?.name === "AbortError" || signal?.aborted) {
-        updateItem(fileName, { status: "error", message: "Cancelled." });
+        updateItem(id, { status: "error", message: "Cancelled." });
       } else {
         const message = err?.message || "Upload failed.";
-        updateItem(fileName, { status: "error", message });
+        updateItem(id, { status: "error", message });
       }
     }
   };
@@ -419,10 +422,6 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
   const handleSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setError(null);
-
-    // Create abort controller for cancellation
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
 
     const fileArray = Array.from(files);
     const photoIdByBase = new Map<string, string>();
@@ -449,18 +448,20 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     });
 
     const tasks: UploadTask[] = fileArray.map((file) => {
+      const id = crypto.randomUUID();
       const base = getBaseName(file.name);
       const photoId = photoIdByBase.get(base);
       if (photoId && isImageFile(file)) {
-        return { file, mediaType: "PHOTO", mediaRole: "image", photoId };
+        return { id, file, mediaType: "PHOTO", mediaRole: "image", photoId };
       }
       if (photoId && isLiveVideoFile(file)) {
-        return { file, mediaType: "PHOTO", mediaRole: "liveVideo", photoId };
+        return { id, file, mediaType: "PHOTO", mediaRole: "liveVideo", photoId };
       }
-      return { file, mediaType: "VIDEO" };
+      return { id, file, mediaType: "VIDEO" };
     });
 
     const queue: UploadState[] = tasks.map((task) => ({
+      id: task.id,
       name: task.file.name,
       progress: 0,
       status: "pending",
@@ -471,7 +472,7 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     // Generate local previews (best-effort)
     tasks.forEach((task) => {
       createPreview(task.file).then((url) => {
-        if (url) updateItem(task.file.name, { previewUrl: url });
+        if (url) updateItem(task.id, { previewUrl: url });
       });
     });
 
@@ -480,10 +481,16 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     const activeUploads: Promise<void>[] = [];
 
     const startNext = async (): Promise<void> => {
-      if (uploadQueue.length === 0 || signal.aborted) return;
+      if (uploadQueue.length === 0) return;
 
       const nextTask = uploadQueue.shift()!;
-      await processFile(nextTask, signal);
+      const controller = new AbortController();
+      abortControllersRef.current.set(nextTask.id, controller);
+      try {
+        await processFile(nextTask, controller.signal);
+      } finally {
+        abortControllersRef.current.delete(nextTask.id);
+      }
       await startNext();
     };
 
@@ -497,70 +504,84 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
     await Promise.all(activeUploads);
 
     setBusy(false);
-    abortControllerRef.current = null;
     onUploaded?.();
     if (inputRef.current) inputRef.current.value = "";
   };
-
-  const handleCancel = () => {
-    abortControllerRef.current?.abort();
-    setBusy(false);
-  };
+  const handleCancelItem = useCallback((id: string) => {
+    const controller = abortControllersRef.current.get(id);
+    if (controller) {
+      controller.abort();
+    }
+  }, []);
 
 
   const listContent = items.length > 0 ? (
     <ul className="uploader__list">
-      {items.map((item) => (
-        <li key={item.name} className="uploader__item">
-          <div className="uploader__thumb" aria-hidden="true">
-            {item.previewUrl ? (
-              <img src={item.previewUrl} alt="" loading="lazy" />
-            ) : (
-              <span>VIDEO</span>
-            )}
-          </div>
-          <div className="uploader__details" style={{ flex: 1, minWidth: 0 }}>
-            <div className="ellipsis">{item.name}</div>
-            <div className="progress">
-              <div
-                className="progress__bar"
-                style={{
-                  width: `${item.progress}%`,
-                  background:
-                    item.status === "error"
-                      ? "#ef4444"
-                      : item.status === "skipped"
-                      ? "#9ca3af"
-                      : "#16a34a",
-                }}
-              />
+      {items.map((item) => {
+        const isActive = item.status === "uploading" || item.status === "hashing";
+        return (
+          <li key={item.id} className="uploader__item">
+            <div className="uploader__thumb" aria-hidden="true">
+              {item.previewUrl ? (
+                <img src={item.previewUrl} alt="" loading="lazy" />
+              ) : (
+                <span>VIDEO</span>
+              )}
             </div>
-            <div className="muted" style={{ fontSize: "0.85rem" }}>
-              {item.status === "hashing"
-                ? "Hashing..."
-                : item.status === "uploading"
-                ? `Uploading ${item.progress}%`
-                : item.status === "done"
-                ? "Done"
-                : item.status === "skipped"
-                ? item.message || "Skipped"
-                : item.status === "error"
-                ? item.message || "Failed"
-                : "Pending"}
+            <div className="uploader__details">
+              <div className="ellipsis">{item.name}</div>
+              <div className="progress">
+                <div
+                  className="progress__bar"
+                  style={{
+                    width: `${item.progress}%`,
+                    background:
+                      item.status === "error"
+                        ? "#ef4444"
+                        : item.status === "skipped"
+                        ? "#9ca3af"
+                        : "#16a34a",
+                  }}
+                />
+              </div>
+              <div className="muted uploader__status">
+                {item.status === "hashing"
+                  ? "Hashing..."
+                  : item.status === "uploading"
+                  ? `Uploading ${item.progress}%`
+                  : item.status === "done"
+                  ? "Done"
+                  : item.status === "skipped"
+                  ? item.message || "Skipped"
+                  : item.status === "error"
+                  ? item.message || "Failed"
+                  : "Pending"}
+              </div>
             </div>
-          </div>
-          {item.status !== "uploading" && item.status !== "hashing" ? (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Remove"
-              onClick={() => removeItem(item.name)}
-            >
-              ✕
-            </button>
-          ) : null}
-        </li>
-      ))}
+            <div className="uploader__item-actions">
+              {isActive ? (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Cancel upload"
+                  onClick={() => handleCancelItem(item.id)}
+                >
+                  ✕
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Remove"
+                  onClick={() => removeItem(item.id)}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </li>
+        );
+      })}
     </ul>
   ) : null;
 
@@ -580,16 +601,6 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
               {busy ? "progress_activity" : "upload"}
             </span>
           </button>
-          {busy && (
-            <button
-              className="pill pill--error"
-              type="button"
-              onClick={handleCancel}
-              style={{ cursor: "pointer" }}
-            >
-              Cancel uploads
-            </button>
-          )}
         </div>
         <input
           ref={inputRef}
