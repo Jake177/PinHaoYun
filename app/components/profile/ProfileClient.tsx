@@ -12,14 +12,27 @@ type ProfileData = {
   gender: string;
   quotaBytes: number;
   usedBytes: number;
+  photoBytes: number;
+  videoBytes: number;
   videosCount: number;
+  photoCount: number;
   createdAt: string | null;
+};
+
+const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[i]}`;
 };
 
 export default function ProfileClient() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -78,6 +91,7 @@ export default function ProfileClient() {
       }
 
       setSuccess("Profile updated.");
+      setIsEditing(false);
       // Refresh profile to get updated data
       await fetchProfile();
     } catch (err: any) {
@@ -119,86 +133,147 @@ export default function ProfileClient() {
             size={140}
             strokeWidth={12}
           />
-          <div className="profile-stats">
-            <div className="profile-stat">
-              <span className="profile-stat__value">{profile?.videosCount || 0}</span>
-              <span className="profile-stat__label">Videos</span>
+          <div className="storage-breakdown">
+            <div className="storage-breakdown__row">
+              <span className="storage-breakdown__icon storage-breakdown__icon--photo material-symbols-outlined">photo</span>
+              <span className="storage-breakdown__label">Photos</span>
+              <span className="storage-breakdown__count">{profile?.photoCount || 0}</span>
+              <span className="storage-breakdown__size">{formatBytes(profile?.photoBytes || 0)}</span>
+            </div>
+            <div className="storage-breakdown__row">
+              <span className="storage-breakdown__icon storage-breakdown__icon--video material-symbols-outlined">video_file</span>
+              <span className="storage-breakdown__label">Videos</span>
+              <span className="storage-breakdown__count">{profile?.videosCount || 0}</span>
+              <span className="storage-breakdown__size">{formatBytes(profile?.videoBytes || 0)}</span>
             </div>
           </div>
         </div>
 
-        {/* Edit Card */}
+        {/* Profile Info Card */}
         <div className="profile-card profile-card--form">
-          <h2>Edit profile</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="field-group">
-              <label htmlFor="email">Email</label>
-              <input
-                type="email"
-                id="email"
-                value={profile?.email || ""}
-                disabled
-                className="input--disabled"
-              />
-              <span className="field-hint">Email cannot be changed</span>
-            </div>
-
-            <div className="field-grid">
-              <div className="field-group">
-                <label htmlFor="givenName">First name</label>
-                <input
-                  type="text"
-                  id="givenName"
-                  value={givenName}
-                  onChange={(e) => setGivenName(e.target.value)}
-                  placeholder="First name"
-                />
-              </div>
-              <div className="field-group">
-                <label htmlFor="familyName">Surname</label>
-                <input
-                  type="text"
-                  id="familyName"
-                  value={familyName}
-                  onChange={(e) => setFamilyName(e.target.value)}
-                  placeholder="Surname"
-                />
-              </div>
-            </div>
-
-            <div className="field-group">
-              <label htmlFor="preferredUsername">Username</label>
-              <input
-                type="text"
-                id="preferredUsername"
-                value={preferredUsername}
-                onChange={(e) => setPreferredUsername(e.target.value)}
-                placeholder="Your display name"
-              />
-            </div>
-
-            <div className="field-group">
-              <label htmlFor="gender">Gender</label>
-              <select
-                id="gender"
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
+          <div className="profile-card__header">
+            <h2>Personal Information</h2>
+            {!isEditing && (
+              <button
+                type="button"
+                className="pill pill--secondary"
+                onClick={() => setIsEditing(true)}
               >
-                <option value="">Select gender</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
+                Edit
+              </button>
+            )}
+          </div>
 
-            <button
-              type="submit"
-              className="auth-submit"
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save changes"}
-            </button>
-          </form>
+          {isEditing ? (
+            <form onSubmit={handleSubmit}>
+              <div className="field-group">
+                <label htmlFor="email">Email</label>
+                <input
+                  type="email"
+                  id="email"
+                  value={profile?.email || ""}
+                  disabled
+                  className="input--disabled"
+                />
+                <span className="field-hint">Email cannot be changed</span>
+              </div>
+
+              <div className="field-grid">
+                <div className="field-group">
+                  <label htmlFor="givenName">First name</label>
+                  <input
+                    type="text"
+                    id="givenName"
+                    value={givenName}
+                    onChange={(e) => setGivenName(e.target.value)}
+                    placeholder="First name"
+                  />
+                </div>
+                <div className="field-group">
+                  <label htmlFor="familyName">Surname</label>
+                  <input
+                    type="text"
+                    id="familyName"
+                    value={familyName}
+                    onChange={(e) => setFamilyName(e.target.value)}
+                    placeholder="Surname"
+                  />
+                </div>
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="preferredUsername">Username</label>
+                <input
+                  type="text"
+                  id="preferredUsername"
+                  value={preferredUsername}
+                  onChange={(e) => setPreferredUsername(e.target.value)}
+                  placeholder="Your display name"
+                />
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="gender">Gender</label>
+                <select
+                  id="gender"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                >
+                  <option value="">Select gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="profile-form__actions">
+                <button
+                  type="button"
+                  className="pill pill--secondary"
+                  onClick={() => {
+                    setIsEditing(false);
+                    // Reset form to original values
+                    setGivenName(profile?.givenName || "");
+                    setFamilyName(profile?.familyName || "");
+                    setPreferredUsername(profile?.preferredUsername || "");
+                    setGender(profile?.gender || "");
+                    setError(null);
+                  }}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="pill pill--primary"
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="profile-view">
+              <div className="profile-view__row">
+                <span className="profile-view__label">Email</span>
+                <span className="profile-view__value">{profile?.email || "—"}</span>
+              </div>
+              <div className="profile-view__row">
+                <span className="profile-view__label">Name</span>
+                <span className="profile-view__value">
+                  {[profile?.givenName, profile?.familyName].filter(Boolean).join(" ") || "—"}
+                </span>
+              </div>
+              <div className="profile-view__row">
+                <span className="profile-view__label">Username</span>
+                <span className="profile-view__value">{profile?.preferredUsername || "—"}</span>
+              </div>
+              <div className="profile-view__row">
+                <span className="profile-view__label">Gender</span>
+                <span className="profile-view__value">{profile?.gender || "—"}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

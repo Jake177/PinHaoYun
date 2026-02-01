@@ -165,6 +165,7 @@ export async function GET(request: NextRequest) {
         originalName: item.originalName,
         contentHash: item.contentHash,
         captureTime: item.captureTime,
+        fileLastModified: item.fileLastModified,
         captureLocation: item.captureLocation,
         captureLat: item.captureLat,
         captureLon: item.captureLon,
@@ -189,17 +190,17 @@ export async function GET(request: NextRequest) {
         liveVideoSize: item.liveVideoSize,
       }));
 
-    // Sort by capture time or created at (descending)
+    // Sort by capture time, then file last modified, then created at (descending)
     const sorted = media.sort((a, b) => {
-      const da = toDate(a.captureTime) ?? toDate(a.createdAt) ?? 0;
-      const db = toDate(b.captureTime) ?? toDate(b.createdAt) ?? 0;
+      const da = toDate(a.captureTime) ?? toDate(a.fileLastModified) ?? toDate(a.createdAt) ?? 0;
+      const db = toDate(b.captureTime) ?? toDate(b.fileLastModified) ?? toDate(b.createdAt) ?? 0;
       return db - da;
     });
 
     // Apply date filter if provided
     const filtered = searchDate
       ? sorted.filter((v) =>
-          [v.captureTime, v.createdAt].some((d) => d?.startsWith(searchDate)),
+          [v.captureTime, v.fileLastModified, v.createdAt].some((d) => d?.startsWith(searchDate)),
         )
       : sorted;
 

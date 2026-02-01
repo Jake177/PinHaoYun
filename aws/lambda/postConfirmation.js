@@ -23,6 +23,8 @@ exports.handler = async (event) => {
         emailVerified: { BOOL: emailVerified },
         quotaBytes: { N: String(256 * 1024 * 1024 * 1024) }, // 256GB
         usedBytes: { N: "0" },
+        photoBytes: { N: "0" },
+        videoBytes: { N: "0" },
         reservedBytes: { N: "0" },
         videosCount: { N: "0" },
         photoCount: { N: "0" },

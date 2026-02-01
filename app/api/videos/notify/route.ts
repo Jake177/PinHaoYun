@@ -50,9 +50,11 @@ export async function POST(request: Request) {
       mediaRole?: "image" | "liveVideo";
       videoId?: string;
       photoId?: string;
+      fileLastModified?: string;
     };
     const now = new Date().toISOString();
     const createdAt = body.uploadedAt || now;
+    const fileLastModified = body.fileLastModified || null;
     const mediaType = body.mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
     const mediaRole = body.mediaRole === "liveVideo" ? "liveVideo" : "image";
     const keyName = body.key?.split("/").pop() || "";
@@ -157,7 +159,7 @@ export async function POST(request: Request) {
                   },
                   UpdateExpression:
                     "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now " +
-                    "ADD usedBytes :size, reservedBytes :negSize",
+                    "ADD usedBytes :size, photoBytes :size, reservedBytes :negSize",
                   ConditionExpression: "reservedBytes >= :size",
                   ExpressionAttributeValues: {
                     ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
@@ -214,6 +216,7 @@ export async function POST(request: Request) {
                     size: { N: String(reservedSize) },
                     status: { S: "READY" },
                     contentHash: { S: contentHash || "" },
+                    ...(fileLastModified ? { fileLastModified: { S: fileLastModified } } : {}),
                     createdAt: { S: createdAt },
                     updatedAt: { S: now },
                   },
@@ -229,10 +232,11 @@ export async function POST(request: Request) {
                   },
                   UpdateExpression:
                     "SET quotaBytes = if_not_exists(quotaBytes, :quota), createdAt = if_not_exists(createdAt, :now), updatedAt = :now " +
-                    "ADD usedBytes :size, reservedBytes :negSize, #count :one",
+                    "ADD usedBytes :size, #bytesType :size, reservedBytes :negSize, #count :one",
                   ConditionExpression: "reservedBytes >= :size",
                   ExpressionAttributeNames: {
                     "#count": mediaType === "PHOTO" ? "photoCount" : "videosCount",
+                    "#bytesType": mediaType === "PHOTO" ? "photoBytes" : "videoBytes",
                   },
                   ExpressionAttributeValues: {
                     ":quota": { N: String(DEFAULT_QUOTA_BYTES) },

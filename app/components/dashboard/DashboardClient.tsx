@@ -18,6 +18,7 @@ type VideoItem = {
   status?: string;
   createdAt?: string;
   captureTime?: string;
+  fileLastModified?: string;
   size?: number;
   captureAddress?: string;
   captureCity?: string;
@@ -317,7 +318,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   const yearOptions = useMemo(() => {
     const years = new Set<string>();
     videos.forEach((v) => {
-      const d = v.captureTime || v.createdAt;
+      const d = v.captureTime || v.fileLastModified || v.createdAt;
       if (!d) return;
       const t = Date.parse(d);
       if (!Number.isNaN(t)) {

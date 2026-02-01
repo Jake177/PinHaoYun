@@ -89,6 +89,8 @@ export async function GET() {
       // DynamoDB stats
       quotaBytes: dbProfile.quotaBytes || 256 * 1024 * 1024 * 1024, // 256GB default
       usedBytes: dbProfile.usedBytes || 0,
+      photoBytes: dbProfile.photoBytes || 0,
+      videoBytes: dbProfile.videoBytes || 0,
       videosCount: dbProfile.videosCount || 0,
       photoCount: dbProfile.photoCount || 0,
       createdAt: dbProfile.createdAt || null,

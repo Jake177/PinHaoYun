@@ -92,6 +92,7 @@ exports.handler = async (event) => {
 
       const now = new Date().toISOString();
       const countField = mediaType === "PHOTO" ? "photoCount" : "videosCount";
+      const bytesField = mediaType === "PHOTO" ? "photoBytes" : "videoBytes";
       const transactItems = [
         {
           Delete: {
@@ -105,9 +106,10 @@ exports.handler = async (event) => {
             TableName: TABLE_NAME,
             Key: { email: { S: email }, sk: { S: "PROFILE" } },
             UpdateExpression:
-              "SET updatedAt = :now ADD usedBytes :negSize, #count :negOne",
+              "SET updatedAt = :now ADD usedBytes :negSize, #bytesField :negSize, #count :negOne",
             ExpressionAttributeNames: {
               "#count": countField,
+              "#bytesField": bytesField,
             },
             ExpressionAttributeValues: {
               ":now": { S: now },

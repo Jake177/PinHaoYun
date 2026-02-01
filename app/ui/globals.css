@@ -1054,6 +1054,23 @@ select.input {
   transform: translateY(0) scale(0.97);
 }
 
+.pill--secondary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pill--secondary:hover {
+  background: var(--bg);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+
+.pill--secondary:active {
+  background: var(--border);
+  transform: translateY(0) scale(0.98);
+}
+
 .dashboard-link {
   display: inline-flex;
   align-items: center;
@@ -1660,6 +1677,85 @@ select.input {
   justify-content: center;
 }
 
+/* Live Photo long-press playback */
+.live-photo-wrapper {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.live-photo-image {
+  width: 100%;
+  transition: opacity 0.2s ease;
+}
+
+.live-photo-image--hidden {
+  opacity: 0;
+}
+
+.live-photo-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  background: #0f172a;
+  border-radius: 16px;
+}
+
+.live-photo-video--visible {
+  opacity: 1;
+}
+
+.live-photo-badge {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 20px;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.live-photo-badge .material-symbols-outlined {
+  font-size: 18px;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+
+.live-photo-badge--playing {
+  background: rgba(59, 130, 246, 0.85);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+}
+
+.live-photo-badge--playing .material-symbols-outlined {
+  animation: live-pulse 1s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.live-photo-badge__text {
+  white-space: nowrap;
+}
+
+/* Legacy live photo info (can be removed if not used elsewhere) */
 .live-photo-info {
   display: flex;
   align-items: center;
@@ -2404,6 +2500,56 @@ select.input {
   text-align: center;
 }
 
+/* Storage Breakdown */
+.storage-breakdown {
+  width: 100%;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.storage-breakdown__row {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.storage-breakdown__icon {
+  font-size: 1.25rem;
+  color: var(--muted);
+}
+
+.storage-breakdown__icon--photo {
+  color: #9333ea;
+}
+
+.storage-breakdown__icon--video {
+  color: #2563eb;
+}
+
+.storage-breakdown__label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.storage-breakdown__count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.storage-breakdown__size {
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 70px;
+  text-align: right;
+}
+
 .profile-stats {
   margin-top: 1rem;
   display: flex;
@@ -2431,6 +2577,56 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.profile-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.profile-card__header h2 {
+  margin-bottom: 0;
+}
+
+/* Profile View Mode */
+.profile-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.profile-view__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-view__row:last-child {
+  border-bottom: none;
+}
+
+.profile-view__label {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.profile-view__value {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Profile Form Actions */
+.profile-form__actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }
 
 .input--disabled {

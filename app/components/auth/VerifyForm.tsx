@@ -165,11 +165,10 @@ export default function VerifyForm({
             id="email"
             name="email"
             type="email"
-            placeholder="Email used during registration"
             autoComplete="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
+            disabled
+            className="input--disabled"
           />
         </div>
 

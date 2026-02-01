@@ -16,6 +16,7 @@ type VideoItem = {
   status?: string;
   createdAt?: string;
   captureTime?: string;
+  fileLastModified?: string;
   captureLocation?: string;
   captureLat?: number;
   captureLon?: number;
@@ -122,6 +123,8 @@ export default function VideoGrid({
   const [deleting, setDeleting] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationSaving, setLocationSaving] = useState(false);
+  const [isPlayingLive, setIsPlayingLive] = useState(false);
+  const liveVideoRef = useRef<HTMLVideoElement>(null);
 
   const previewIsHeicPhoto =
     preview?.type === "PHOTO" && isHeicLike(preview.originalName);
@@ -144,6 +147,28 @@ export default function VideoGrid({
   const toggleDetails = () => {
     setShowMeta((prev) => !prev);
   };
+
+  // Live Photo long-press handlers
+  const handleLivePhotoStart = useCallback(() => {
+    if (!liveVideoRef.current) return;
+    setIsPlayingLive(true);
+    liveVideoRef.current.currentTime = 0;
+    liveVideoRef.current.play().catch(() => {
+      // Autoplay may be blocked, ignore
+    });
+  }, []);
+
+  const handleLivePhotoEnd = useCallback(() => {
+    if (!liveVideoRef.current) return;
+    setIsPlayingLive(false);
+    liveVideoRef.current.pause();
+    liveVideoRef.current.currentTime = 0;
+  }, []);
+
+  // Reset live photo state when preview changes
+  useEffect(() => {
+    setIsPlayingLive(false);
+  }, [previewKey]);
 
   const handleLoadMore = useCallback(() => {
     if (!onLoadMore || !hasMore) return;
@@ -207,7 +232,8 @@ export default function VideoGrid({
   const groups = useMemo(() => {
     const buckets: Record<string, VideoItem[]> = {};
     videos.forEach((vid) => {
-      const dateStr = vid.captureTime || vid.createdAt || "";
+      // Use captureTime first, then fileLastModified, then createdAt
+      const dateStr = vid.captureTime || vid.fileLastModified || vid.createdAt || "";
       const date = Date.parse(dateStr) ? new Date(dateStr) : null;
       const key = date
         ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
@@ -481,13 +507,21 @@ export default function VideoGrid({
                 {preview.type === "PHOTO" ? (
                   <div className="preview-container">
                     {preview.liveVideoUrl ? (
-                      // For Live Photos: show photo with video toggle
-                      <>
+                      // For Live Photos: long-press to play
+                      <div
+                        className="live-photo-wrapper"
+                        onPointerDown={handleLivePhotoStart}
+                        onPointerUp={handleLivePhotoEnd}
+                        onPointerLeave={handleLivePhotoEnd}
+                        onPointerCancel={handleLivePhotoEnd}
+                        onContextMenu={(e) => e.preventDefault()}
+                      >
                         <img
                           src={previewPhotoSrc || ""}
                           data-alt-src={preview.thumbnailUrlAlt || undefined}
                           alt={preview.originalName || "Photo"}
-                          className="preview-image"
+                          className={`preview-image live-photo-image ${isPlayingLive ? "live-photo-image--hidden" : ""}`}
+                          draggable={false}
                           onError={(e) => {
                             const img = e.currentTarget;
                             const altSrc = img.dataset.altSrc;
@@ -496,20 +530,23 @@ export default function VideoGrid({
                             }
                           }}
                         />
-                        <div className="live-photo-info">
-                          <span className="live-badge">Live Photo</span>
-                          <a
-                            href={preview.liveVideoUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="pill pill--primary"
-                            title="Open dynamic video in new tab"
-                          >
-                            <span className="material-symbols-outlined">play_arrow</span>
-                            Play motion
-                          </a>
+                        <video
+                          ref={liveVideoRef}
+                          src={preview.liveVideoUrl}
+                          className={`preview-video live-photo-video ${isPlayingLive ? "live-photo-video--visible" : ""}`}
+                          muted
+                          playsInline
+                          loop
+                          preload="auto"
+                          onEnded={handleLivePhotoEnd}
+                        />
+                        <div className={`live-photo-badge ${isPlayingLive ? "live-photo-badge--playing" : ""}`}>
+                          <span className="material-symbols-outlined">motion_photos_on</span>
+                          <span className="live-photo-badge__text">
+                            {isPlayingLive ? "Playing..." : "Hold to play"}
+                          </span>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <img
                         src={previewPhotoSrc || ""}

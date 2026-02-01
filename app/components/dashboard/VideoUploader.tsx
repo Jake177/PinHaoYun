@@ -270,7 +270,9 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
       ALLOWED_IMAGE_TYPES.includes(file.type) ||
       ["jpg", "jpeg", "png", "heic", "heif"].includes(ext);
     const isLiveVideo = LIVE_VIDEO_TYPES.includes(file.type) || ext === "mov";
-    const isVideo = ALLOWED_VIDEO_TYPES.includes(file.type);
+    const isVideo =
+      ALLOWED_VIDEO_TYPES.includes(file.type) ||
+      ["mp4", "mov", "m4v"].includes(ext);
     const typeAllowed =
       mediaType === "PHOTO"
         ? mediaRole === "liveVideo"
@@ -396,6 +398,8 @@ export default function VideoUploader({ onUploaded, variant = "default", listTar
           mediaType,
           mediaRole,
           photoId,
+          // Pass file's last modified time for fallback sorting when EXIF date is missing
+          fileLastModified: file.lastModified ? new Date(file.lastModified).toISOString() : undefined,
         },
         signal,
       );
