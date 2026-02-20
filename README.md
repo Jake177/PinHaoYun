@@ -114,6 +114,7 @@ All variables are documented in `.env.example`. The most important ones are:
 
 - `S3_ORIGINAL_BUCKET` (original videos)
 - `S3_THUMBNAIL_BUCKET` (thumbnails)
+- `S3_PROFILE_BUCKET` (optional but required for profile signatures)
 - `VIDEOS_TABLE` (DynamoDB table name)
 - `USERS_TABLE` (optional; can be the same as `VIDEOS_TABLE`)
 - `PRESIGN_TTL_SECONDS` (optional; default 900 seconds)
@@ -160,6 +161,7 @@ Common item types:
 ### S3
 
 - Create two buckets: one for originals and one for thumbnails.
+- For profile signatures, configure a separate private bucket and set `S3_PROFILE_BUCKET`.
 - Ensure your S3 CORS configuration exposes the `ETag` header (multipart upload needs it).
 - The app stores originals under `video/<email>/<uuid>_<filename>` and photos under `photo/<email>/<photoId>_<filename>`.
 - Live Photo videos are stored as `photo/<email>/<photoId>_live.mov`.
