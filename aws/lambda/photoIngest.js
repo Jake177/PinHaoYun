@@ -12,6 +12,7 @@ const { pipeline } = require("node:stream/promises");
 const { existsSync, readdirSync } = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
+const { buildMediaTimelineFields } = require("./timeline");
 
 const execFileAsync = promisify(execFile);
 
@@ -695,6 +696,19 @@ exports.handler = async (event) => {
         addField("contentType", resolvedContentType);
         // Always upsert non-user-editable metadata (so we can backfill via reprocessing).
         addField("captureTime", metadata.captureTime);
+        if (metadata.captureTime) {
+          const timeline = buildMediaTimelineFields({
+            email: userId,
+            mediaType: "PHOTO",
+            mediaId: photoId,
+            captureTime: metadata.captureTime,
+            fallbackNow: now,
+          });
+          addField("mediaAt", timeline.mediaAt);
+          addField("mediaAtSource", timeline.mediaAtSource);
+          addField("timelinePk", timeline.timelinePk);
+          addField("timelineSk", timeline.timelineSk);
+        }
         addFieldIfMissing("captureLat", metadata.captureLat);
         addFieldIfMissing("captureLon", metadata.captureLon);
         addFieldIfMissing("originalCaptureLat", metadata.captureLat);

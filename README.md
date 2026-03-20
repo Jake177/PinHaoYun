@@ -116,6 +116,7 @@ All variables are documented in `.env.example`. The most important ones are:
 - `S3_THUMBNAIL_BUCKET` (thumbnails)
 - `S3_PROFILE_BUCKET` (optional but required for profile signatures)
 - `VIDEOS_TABLE` (DynamoDB table name)
+- `TIMELINE_INDEX_NAME` (optional but recommended; enables the timeline GSI-backed library query path after backfill)
 - `USERS_TABLE` (optional; can be the same as `VIDEOS_TABLE`)
 - `PRESIGN_TTL_SECONDS` (optional; default 900 seconds)
 
@@ -156,6 +157,13 @@ Common item types:
 - `RESERVE#<videoId>` – temporary reservation record during multipart upload
 - `RESERVE#PHOTO#<photoId>` – temporary reservation record during photo uploads
 
+Timeline attributes on media items:
+
+- `mediaAt` – canonical timeline timestamp (`captureTime ?? fileLastModified ?? createdAt`)
+- `mediaAtSource` – one of `capture`, `file`, `upload`
+- `timelinePk` – `USER#<email>`
+- `timelineSk` – `<mediaAt>#<type>#<mediaId>`
+
 ## AWS Setup Notes (High Level)
 
 ### S3
@@ -182,6 +190,31 @@ Common item types:
 
 Reservations include an `expiresAt` (epoch seconds) attribute. Enabling TTL on `expiresAt` helps clean up stale `RESERVE#...` items.
 
+### Timeline Index (recommended for My Library)
+
+To support a Google Photos / iCloud style timeline, create a DynamoDB GSI with:
+
+- Partition key: `timelinePk` (string)
+- Sort key: `timelineSk` (string)
+- Projection: `ALL`
+
+Recommended index name:
+
+- `TimelineIndex`
+
+Cutover order:
+
+1. Deploy the application/Lambda code that writes `mediaAt`, `mediaAtSource`, `timelinePk`, and `timelineSk`.
+2. Create the GSI in DynamoDB.
+3. Run `pnpm backfill:timeline` to populate timeline attributes on existing media items.
+4. Set `TIMELINE_INDEX_NAME=TimelineIndex` in the app/Lambda environment.
+5. Redeploy the Next.js app so `/api/videos/list` and `/api/videos/facets` switch to the GSI-backed read path.
+
+Optional backfill flags:
+
+- `pnpm backfill:timeline -- --dry-run`
+- `pnpm backfill:timeline -- --email=user@example.com`
+
 ### Secrets Manager (optional, recommended for Amplify/SSR)
 
 If you don’t want to store `COGNITO_CLIENT_SECRET` directly in env vars, create a Secrets Manager secret (default name: `pinhaoyun/secret`) containing either:
@@ -206,6 +239,7 @@ This repository is commonly deployed with AWS Amplify Hosting (SSR). At a high l
 - `pnpm build` – production build
 - `pnpm start` – run the production build locally
 - `pnpm lint` – lint the project
+- `pnpm backfill:timeline` – populate timeline index attributes on existing media items
 
 ## Licence
 

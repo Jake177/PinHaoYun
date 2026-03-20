@@ -8,6 +8,7 @@ import {
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 import { normaliseContentType } from "@/app/lib/contentType";
+import { buildMediaTimelineFields } from "@/app/lib/mediaTimeline";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
@@ -68,6 +69,14 @@ export async function POST(request: Request) {
     const resolvedContentType =
       normaliseContentType(body.contentType, body.originalName || body.key) ||
       "application/octet-stream";
+    const timeline = buildMediaTimelineFields({
+      email: normalizedUser,
+      mediaType,
+      mediaId,
+      fileLastModified,
+      createdAt,
+      fallbackNow: now,
+    });
 
     if (!contentHash && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
       return NextResponse.json(
@@ -135,7 +144,11 @@ export async function POST(request: Request) {
                   UpdateExpression:
                     "SET liveVideoBucket = :bucket, liveVideoKey = :key, liveVideoName = :name, " +
                     "liveVideoContentType = :contentType, liveVideoSize = :liveSize, updatedAt = :now, " +
-                    "#type = if_not_exists(#type, :type), createdAt = if_not_exists(createdAt, :now)",
+                    "#type = if_not_exists(#type, :type), createdAt = if_not_exists(createdAt, :createdAt), " +
+                    "mediaAt = if_not_exists(mediaAt, :mediaAt), " +
+                    "mediaAtSource = if_not_exists(mediaAtSource, :mediaAtSource), " +
+                    "timelinePk = if_not_exists(timelinePk, :timelinePk), " +
+                    "timelineSk = if_not_exists(timelineSk, :timelineSk)",
                   ExpressionAttributeNames: {
                     "#type": "type",
                   },
@@ -146,7 +159,12 @@ export async function POST(request: Request) {
                       ":contentType": { S: resolvedContentType },
                       ":liveSize": { N: String(reservedSize) },
                       ":now": { S: now },
+                      ":createdAt": { S: createdAt },
                       ":type": { S: "PHOTO" },
+                      ":mediaAt": { S: timeline.mediaAt },
+                      ":mediaAtSource": { S: timeline.mediaAtSource },
+                      ":timelinePk": { S: timeline.timelinePk },
+                      ":timelineSk": { S: timeline.timelineSk },
                     },
                   },
               },
@@ -216,6 +234,10 @@ export async function POST(request: Request) {
                     size: { N: String(reservedSize) },
                     status: { S: "READY" },
                     contentHash: { S: contentHash || "" },
+                    mediaAt: { S: timeline.mediaAt },
+                    mediaAtSource: { S: timeline.mediaAtSource },
+                    timelinePk: { S: timeline.timelinePk },
+                    timelineSk: { S: timeline.timelineSk },
                     ...(fileLastModified ? { fileLastModified: { S: fileLastModified } } : {}),
                     createdAt: { S: createdAt },
                     updatedAt: { S: now },

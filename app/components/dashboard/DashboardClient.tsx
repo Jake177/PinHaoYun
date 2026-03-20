@@ -39,6 +39,11 @@ type DashboardClientProps = {
   username: string;
 };
 
+type LibraryFacets = {
+  years: Array<{ value: string; count: number }>;
+  monthsByYear: Record<string, Array<{ value: string; count: number }>>;
+};
+
 const PAGE_SIZE = 20;
 
 const formatBytes = (bytes: number): string => {
@@ -72,6 +77,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     videosCount: number;
     photoCount: number;
   } | null>(null);
+  const [libraryFacets, setLibraryFacets] = useState<LibraryFacets | null>(null);
 
   const greeting = useMemo(
     () => (username ? `Welcome, ${username}` : "Welcome back"),
@@ -191,9 +197,30 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     }
   }, []);
 
+  const fetchFacets = useCallback(async () => {
+    try {
+      const resp = await fetch("/api/videos/facets");
+      if (!resp.ok) return;
+      const data = (await resp.json()) as LibraryFacets;
+      setLibraryFacets({
+        years: Array.isArray(data.years) ? data.years : [],
+        monthsByYear:
+          data.monthsByYear && typeof data.monthsByYear === "object"
+            ? data.monthsByYear
+            : {},
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFacets();
+  }, [fetchFacets]);
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchVideos(true), fetchProfile()]);
-  }, [fetchProfile, fetchVideos]);
+    await Promise.all([fetchVideos(true), fetchProfile(), fetchFacets()]);
+  }, [fetchFacets, fetchProfile, fetchVideos]);
 
   // Fetch user storage stats.
   useEffect(() => {
@@ -216,8 +243,9 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       }
       await fetchVideos(true);
       await fetchProfile();
+      await fetchFacets();
     },
-    [fetchProfile, fetchVideos],
+    [fetchFacets, fetchProfile, fetchVideos],
   );
 
   const resetSelection = useCallback(() => {
@@ -278,6 +306,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         const data = (await resp.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error || "Deletion failed");
       }
+      void fetchFacets();
       resetSelection();
     } catch (err: any) {
       setVideos(previousVideos);
@@ -315,7 +344,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     [fetchVideos],
   );
 
-  const yearOptions = useMemo(() => {
+  const fallbackYearOptions = useMemo(() => {
     const years = new Set<string>();
     videos.forEach((v) => {
       const d = v.captureTime || v.fileLastModified || v.createdAt;
@@ -327,6 +356,32 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     });
     return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [videos]);
+
+  const yearOptions = useMemo(
+    () =>
+      libraryFacets?.years?.length
+        ? libraryFacets.years.map((entry) => entry.value)
+        : fallbackYearOptions,
+    [fallbackYearOptions, libraryFacets],
+  );
+
+  const monthOptions = useMemo(() => {
+    if (!filterYear) return [] as string[];
+    const facetMonths = libraryFacets?.monthsByYear?.[filterYear];
+    if (facetMonths?.length) {
+      return facetMonths.map((entry) => entry.value);
+    }
+
+    const months = new Set<string>();
+    videos.forEach((v) => {
+      const d = v.captureTime || v.fileLastModified || v.createdAt;
+      if (!d || !d.startsWith(filterYear)) return;
+      const t = Date.parse(d);
+      if (Number.isNaN(t)) return;
+      months.add(String(new Date(t).getMonth() + 1).padStart(2, "0"));
+    });
+    return Array.from(months).sort((a, b) => a.localeCompare(b));
+  }, [filterYear, libraryFacets, videos]);
 
   return (
     <div className="dashboard-layout">
@@ -437,13 +492,11 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                 disabled={!filterYear}
               >
                 <option value="">All months</option>
-                {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map(
-                  (m) => (
-                    <option key={m} value={m}>
-                      {new Date(2000, Number(m) - 1, 1).toLocaleString("en-GB", { month: "long" })}
-                    </option>
-                  ),
-                )}
+                {monthOptions.map((m) => (
+                  <option key={m} value={m}>
+                    {new Date(2000, Number(m) - 1, 1).toLocaleString("en-GB", { month: "long" })}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

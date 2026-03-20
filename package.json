@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "backfill:timeline": "node scripts/backfill-media-timeline.js"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.922.0",

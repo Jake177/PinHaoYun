@@ -12,6 +12,7 @@ const { promisify } = require("node:util");
 const { pipeline } = require("node:stream/promises");
 const path = require("node:path");
 const os = require("node:os");
+const { buildMediaTimelineFields } = require("./timeline");
 
 const execFileAsync = promisify(execFile);
 
@@ -183,6 +184,17 @@ const updateVideoMetadata = async ({
 
   if (metadata.captureTime) {
     addField("captureTime", toAttrString(metadata.captureTime));
+    const timeline = buildMediaTimelineFields({
+      email,
+      mediaType: "VIDEO",
+      mediaId: videoId,
+      captureTime: metadata.captureTime,
+      fallbackNow: now,
+    });
+    addField("mediaAt", toAttrString(timeline.mediaAt));
+    addField("mediaAtSource", toAttrString(timeline.mediaAtSource));
+    addField("timelinePk", toAttrString(timeline.timelinePk));
+    addField("timelineSk", toAttrString(timeline.timelineSk));
   }
   if (metadata.captureLocation) {
     addField("captureLocation", toAttrString(metadata.captureLocation));

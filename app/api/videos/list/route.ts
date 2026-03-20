@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
-import { unmarshall } from "@aws-sdk/util-dynamodb";
-import { decodeIdToken } from "@/app/lib/jwt";
+import {
+  DynamoDBClient,
+  QueryCommand,
+  type AttributeValue,
+} from "@aws-sdk/client-dynamodb";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { unmarshall } from "@aws-sdk/util-dynamodb";
+import { decodeIdToken } from "@/app/lib/jwt";
+import {
+  mapDbMediaItem,
+  queryAllMediaForUser,
+  type LibraryMediaItem,
+} from "@/app/lib/mediaLibrary";
+import { normaliseDatePrefix } from "@/app/lib/mediaTimeline";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const thumbnailBucket = process.env.S3_THUMBNAIL_BUCKET;
+const timelineIndexName = process.env.TIMELINE_INDEX_NAME?.trim() || "";
 
 if (!tableName) {
   console.warn("[videos/list] Missing env VIDEOS_TABLE");
@@ -19,6 +30,20 @@ const ddb = new DynamoDBClient({ region });
 const s3 = new S3Client({ region });
 
 const expiresInSeconds = Number(process.env.PRESIGN_TTL_SECONDS || 900);
+const DEFAULT_PAGE_SIZE = 20;
+
+type CursorState = {
+  lastEvaluatedKey?: Record<string, AttributeValue> | null;
+  offset?: number;
+};
+
+type LibraryListItem = LibraryMediaItem & {
+  thumbnailUrl: string | null;
+  thumbnailUrlAlt: string | null;
+  originalUrl: string | null;
+  originalPhotoUrl: string | null;
+  liveVideoUrl: string | null;
+};
 
 async function signUrl(
   bucket: string | undefined,
@@ -43,8 +68,6 @@ const altKeyForEmailSegment = (key?: string): string | null => {
   if (parts.length < 3) return null;
   const emailSeg = parts[1];
 
-  // Some older lambdas stored an encoded email segment (e.g. `%40`) while newer code uses `@`.
-  // Provide an alternate key so the client can fall back if a thumb URL 404s due to mismatch.
   let altSeg: string | null = null;
   if (emailSeg.includes("@")) {
     altSeg = encodeURIComponent(emailSeg);
@@ -64,13 +87,143 @@ const altKeyForEmailSegment = (key?: string): string | null => {
   return altKey !== key ? altKey : null;
 };
 
-const toDate = (value?: string) => {
-  if (!value) return null;
-  const t = Date.parse(value);
-  return Number.isNaN(t) ? null : t;
+const decodeCursor = (cursor?: string | null): CursorState => {
+  if (!cursor) return {};
+  try {
+    return JSON.parse(Buffer.from(cursor, "base64").toString("utf-8")) as CursorState;
+  } catch {
+    return {};
+  }
 };
 
-const DEFAULT_PAGE_SIZE = 20;
+const encodeCursor = (cursor: CursorState | null): string | null => {
+  if (!cursor) return null;
+  if (!cursor.lastEvaluatedKey && cursor.offset == null) return null;
+  return Buffer.from(JSON.stringify(cursor)).toString("base64");
+};
+
+const filterByDatePrefix = (
+  items: LibraryMediaItem[],
+  datePrefix: string | null,
+): LibraryMediaItem[] => {
+  if (!datePrefix) return items;
+  return items.filter((item) => (item.mediaAt || "").startsWith(datePrefix));
+};
+
+const withSignedUrls = async (
+  items: LibraryMediaItem[],
+): Promise<LibraryListItem[]> =>
+  Promise.all(
+    items.map(async (item) => {
+      const thumbBucket = item.thumbnailBucket || thumbnailBucket;
+      const thumbKey = item.thumbnailKey;
+      const thumbKeyAlt = altKeyForEmailSegment(thumbKey) || undefined;
+      return {
+        ...item,
+        originalUrl: await signUrl(item.originalBucket || originalBucket, item.originalKey),
+        originalPhotoUrl:
+          item.type === "PHOTO"
+            ? await signUrl(
+                item.originalPhotoBucket || originalBucket,
+                item.originalPhotoKey,
+              )
+            : null,
+        thumbnailUrl: await signUrl(thumbBucket, thumbKey),
+        thumbnailUrlAlt: thumbKeyAlt ? await signUrl(thumbBucket, thumbKeyAlt) : null,
+        liveVideoUrl: await signUrl(
+          item.liveVideoBucket || originalBucket,
+          item.liveVideoKey,
+        ),
+      };
+    }),
+  );
+
+const listViaTimelineIndex = async ({
+  email,
+  limit,
+  datePrefix,
+  cursor,
+}: {
+  email: string;
+  limit: number;
+  datePrefix: string | null;
+  cursor: CursorState;
+}) => {
+  let lastEvaluatedKey = cursor.lastEvaluatedKey || undefined;
+  const page: LibraryMediaItem[] = [];
+
+  do {
+    const response = await ddb.send(
+      new QueryCommand({
+        TableName: tableName!,
+        IndexName: timelineIndexName,
+        KeyConditionExpression: datePrefix
+          ? "timelinePk = :timelinePk AND begins_with(timelineSk, :timelineSkPrefix)"
+          : "timelinePk = :timelinePk",
+        ExpressionAttributeValues: {
+          ":timelinePk": { S: `USER#${email}` },
+          ...(datePrefix
+            ? {
+                ":timelineSkPrefix": { S: datePrefix },
+              }
+            : {}),
+        },
+        ScanIndexForward: false,
+        ExclusiveStartKey: lastEvaluatedKey,
+        Limit: limit - page.length,
+      }),
+    );
+
+    const items =
+      response.Items?.map((entry) =>
+        mapDbMediaItem(unmarshall(entry) as Record<string, unknown>),
+      ) || [];
+
+    page.push(
+      ...items.filter(
+        (item) => item.status !== "DELETING" && item.status !== "DELETED",
+      ),
+    );
+    lastEvaluatedKey = response.LastEvaluatedKey;
+  } while (page.length < limit && lastEvaluatedKey);
+
+  return {
+    items: page,
+    nextCursor: encodeCursor(
+      lastEvaluatedKey ? { lastEvaluatedKey } : null,
+    ),
+    hasMore: Boolean(lastEvaluatedKey),
+  };
+};
+
+const listViaPrimaryKeyFallback = async ({
+  email,
+  limit,
+  datePrefix,
+  cursor,
+}: {
+  email: string;
+  limit: number;
+  datePrefix: string | null;
+  cursor: CursorState;
+}) => {
+  const allMedia = await queryAllMediaForUser({
+    ddb,
+    tableName: tableName!,
+    email,
+  });
+  const filtered = filterByDatePrefix(allMedia, datePrefix);
+  const offset = Math.max(0, Number(cursor.offset) || 0);
+  const items = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  const hasMore = nextOffset < filtered.length;
+
+  return {
+    items,
+    nextCursor: hasMore ? encodeCursor({ offset: nextOffset }) : null,
+    hasMore,
+  };
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -86,6 +239,7 @@ export async function GET(request: NextRequest) {
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     const payload = decodeIdToken(token) as Record<string, unknown>;
     const email =
       (payload.email as string) ||
@@ -95,176 +249,56 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Missing user id" }, { status: 401 });
     }
 
-    const normalizedEmail = email.toLowerCase();
-    const searchDate = request.nextUrl.searchParams.get("date"); // YYYY / YYYY-MM / YYYY-MM-DD
     const limitParam = request.nextUrl.searchParams.get("limit");
     const cursorParam = request.nextUrl.searchParams.get("cursor");
-
-    const limit = Math.min(Math.max(Number(limitParam) || DEFAULT_PAGE_SIZE, 1), 100);
-
-    const decodeCursor = (cursor: string) => {
-      try {
-        return JSON.parse(Buffer.from(cursor, "base64").toString("utf-8"));
-      } catch {
-        return {};
-      }
-    };
-
-    const cursorState = cursorParam ? decodeCursor(cursorParam) : {};
-    const videoStartKey = cursorState.video || undefined;
-    const photoStartKey = cursorState.photo || undefined;
-
-    const queryLimit = searchDate ? limit * 3 : limit + 10;
-    const queryByPrefix = async (skPrefix: string, startKey?: Record<string, any>) => {
-      const res = await ddb.send(
-        new QueryCommand({
-          TableName: tableName,
-          KeyConditionExpression: "email = :email AND begins_with(sk, :skPrefix)",
-          ExpressionAttributeValues: {
-            ":email": { S: normalizedEmail },
-            ":skPrefix": { S: `${skPrefix}#` },
-          },
-          ExclusiveStartKey: startKey,
-          Limit: queryLimit,
-        }),
-      );
-      return {
-        items: res.Items?.map((item) => unmarshall(item) as Record<string, any>) || [],
-        lastKey: res.LastEvaluatedKey || null,
-      };
-    };
-
-    const [videoRes, photoRes] = await Promise.all([
-      queryByPrefix("VIDEO", videoStartKey),
-      queryByPrefix("PHOTO", photoStartKey),
-    ]);
-
-    const records = [...videoRes.items, ...photoRes.items];
-
-    const media = records
-      .filter(
-        (r) =>
-          typeof r.sk === "string" &&
-          (r.sk.startsWith("VIDEO#") || r.sk.startsWith("PHOTO#")) &&
-          r.status !== "DELETING" &&
-          r.status !== "DELETED",
-      )
-      .map((item) => ({
-        id: item.videoId || item.photoId || item.sk || "",
-        type: item.type || (item.sk?.startsWith("PHOTO#") ? "PHOTO" : "VIDEO"),
-        contentType: item.contentType,
-        originalKey: item.originalKey,
-        originalBucket: item.originalBucket,
-        originalPhotoKey: item.originalPhotoKey,
-        originalPhotoBucket: item.originalPhotoBucket,
-        thumbnailKey: item.thumbnailKey,
-        thumbnailBucket: item.thumbnailBucket,
-        status: item.status,
-        size: item.size,
-        createdAt: item.createdAt,
-        originalName: item.originalName,
-        contentHash: item.contentHash,
-        captureTime: item.captureTime,
-        fileLastModified: item.fileLastModified,
-        captureLocation: item.captureLocation,
-        captureLat: item.captureLat,
-        captureLon: item.captureLon,
-        captureAddress: item.captureAddress,
-        captureCity: item.captureCity,
-        captureRegion: item.captureRegion,
-        captureCountry: item.captureCountry,
-        captureAlt: item.captureAlt,
-        orientation: item.orientation,
-        deviceMake: item.deviceMake,
-        deviceModel: item.deviceModel,
-        deviceSoftware: item.deviceSoftware,
-        durationSec: item.durationSec,
-        width: item.width,
-        height: item.height,
-        fps: item.fps,
-        bitrate: item.bitrate,
-        codec: item.codec,
-        rotation: item.rotation,
-        liveVideoKey: item.liveVideoKey,
-        liveVideoBucket: item.liveVideoBucket,
-        liveVideoSize: item.liveVideoSize,
-      }));
-
-    // Sort by capture time, then file last modified, then created at (descending)
-    const sorted = media.sort((a, b) => {
-      const da = toDate(a.captureTime) ?? toDate(a.fileLastModified) ?? toDate(a.createdAt) ?? 0;
-      const db = toDate(b.captureTime) ?? toDate(b.fileLastModified) ?? toDate(b.createdAt) ?? 0;
-      return db - da;
-    });
-
-    // Apply date filter if provided
-    const filtered = searchDate
-      ? sorted.filter((v) =>
-          [v.captureTime, v.fileLastModified, v.createdAt].some((d) => d?.startsWith(searchDate)),
-        )
-      : sorted;
-
-    // Paginate results
-    const paginated = filtered.slice(0, limit);
-
-    // Generate presigned URLs only for the paginated results
-    const withUrls = await Promise.all(
-      paginated.map(async (item) => {
-        const thumbBucket = item.thumbnailBucket || thumbnailBucket;
-        const thumbKey = item.thumbnailKey;
-        const thumbKeyAlt = altKeyForEmailSegment(thumbKey) || undefined;
-        const originalUrl = await signUrl(
-          item.originalBucket || originalBucket,
-          item.originalKey,
-        );
-        // For photos, get the original photo (HEIC/etc) if available
-        const originalPhotoUrl = item.type === "PHOTO"
-          ? await signUrl(
-              item.originalPhotoBucket || originalBucket,
-              item.originalPhotoKey,
-            )
-          : null;
-        const thumbnailUrl = await signUrl(thumbBucket, thumbKey);
-        const thumbnailUrlAlt = thumbKeyAlt
-          ? await signUrl(thumbBucket, thumbKeyAlt)
-          : null;
-        const liveVideoUrl = await signUrl(
-          item.liveVideoBucket || originalBucket,
-          item.liveVideoKey,
-        );
-        return {
-          ...item,
-          originalUrl,
-          originalPhotoUrl,
-          thumbnailUrl,
-          thumbnailUrlAlt,
-          liveVideoUrl,
-        };
-      }),
+    const datePrefix = normaliseDatePrefix(
+      request.nextUrl.searchParams.get("date"),
     );
+    const limit = Math.min(
+      Math.max(Number(limitParam) || DEFAULT_PAGE_SIZE, 1),
+      100,
+    );
+    const cursor = decodeCursor(cursorParam);
 
-    // Prepare next cursor
-    let nextCursor: string | null = null;
-    const hasMoreVideo = Boolean(videoRes.lastKey);
-    const hasMorePhoto = Boolean(photoRes.lastKey);
-    
-    // Only set cursor if there's actually more data to fetch
-    if (hasMoreVideo || hasMorePhoto) {
-      nextCursor = Buffer.from(
-        JSON.stringify({
-          video: videoRes.lastKey || null,
-          photo: photoRes.lastKey || null,
-        }),
-      ).toString("base64");
+    let result:
+      | {
+          items: LibraryMediaItem[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        }
+      | null = null;
+
+    if (timelineIndexName) {
+      try {
+        result = await listViaTimelineIndex({
+          email: email.toLowerCase(),
+          limit,
+          datePrefix,
+          cursor,
+        });
+      } catch (error: any) {
+        console.warn("[videos/list] Timeline index query failed, falling back", {
+          name: error?.name,
+          message: error?.message,
+        });
+      }
     }
 
-    // hasMore is true only if we have a valid next cursor
-    const hasMore = Boolean(nextCursor);
+    if (!result) {
+      result = await listViaPrimaryKeyFallback({
+        email: email.toLowerCase(),
+        limit,
+        datePrefix,
+        cursor,
+      });
+    }
+
+    const videos = await withSignedUrls(result.items);
 
     return NextResponse.json({
-      videos: withUrls,
-      nextCursor,
-      hasMore,
+      videos,
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
     });
   } catch (error: any) {
     console.error("[videos/list] error", error);
