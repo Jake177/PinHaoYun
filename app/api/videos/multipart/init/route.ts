@@ -14,6 +14,12 @@ import {
 import crypto from "node:crypto";
 import { decodeIdToken } from "@/app/lib/jwt";
 import { normaliseContentType } from "@/app/lib/contentType";
+import {
+  DEFAULT_PLAN_CODE,
+  getPlanQuotaBytes,
+  UPLOAD_GRACE_BYTES,
+} from "@/app/lib/plans";
+import { resolveProfileBillingState } from "@/app/lib/profileBilling";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const ALLOWED_VIDEO_EXT = ["mov", "mp4", "hevc", "m4v"];
@@ -26,8 +32,8 @@ const tableName = process.env.VIDEOS_TABLE;
 
 const s3 = new S3Client({ region });
 const ddb = new DynamoDBClient({ region });
-const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024 * 1024; // 256GB
-const GRACE_BYTES = 1024 * 1024 * 1024; // 1GB
+const DEFAULT_QUOTA_BYTES = getPlanQuotaBytes(DEFAULT_PLAN_CODE);
+const GRACE_BYTES = UPLOAD_GRACE_BYTES;
 const RESERVE_TTL_SECONDS = 24 * 60 * 60; // 1 day
 
 const sanitizeName = (name: string) =>
@@ -195,7 +201,7 @@ export async function POST(request: Request) {
       : {};
     let usedBytes = Number(profile.usedBytes || 0);
     let reservedBytes = Number(profile.reservedBytes || 0);
-    const quotaBytes = Number(profile.quotaBytes || DEFAULT_QUOTA_BYTES);
+    const quotaBytes = resolveProfileBillingState(profile, new Date(now)).quotaBytes;
 
     if (usedBytes + reservedBytes + sizeNumber > quotaBytes + GRACE_BYTES) {
       return NextResponse.json(
@@ -294,7 +300,10 @@ export async function POST(request: Request) {
           : {};
         usedBytes = Number(refreshed.usedBytes || 0);
         reservedBytes = Number(refreshed.reservedBytes || 0);
-        const updatedQuota = Number(refreshed.quotaBytes || DEFAULT_QUOTA_BYTES);
+        const updatedQuota = resolveProfileBillingState(
+          refreshed as Record<string, unknown>,
+          new Date(now),
+        ).quotaBytes;
         if (usedBytes + reservedBytes + sizeNumber > updatedQuota + GRACE_BYTES) {
           break;
         }

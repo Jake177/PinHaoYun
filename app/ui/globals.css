@@ -2500,6 +2500,48 @@ select.input {
   text-align: center;
 }
 
+.profile-membership {
+  width: 100%;
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(15, 23, 42, 0.02) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  text-align: left;
+}
+
+.profile-membership__eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile-membership__title {
+  margin-top: 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.profile-membership__meta {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.profile-membership__link {
+  display: inline-flex;
+  margin-top: 0.75rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.profile-membership__link:hover {
+  text-decoration: underline;
+}
+
 /* Storage Breakdown */
 .storage-breakdown {
   width: 100%;
@@ -2839,6 +2881,151 @@ select.input {
 }
 
 /* ========================================
+   Plans Page
+   ======================================== */
+.plans-page {
+  padding: clamp(1rem, 3vw, 2rem);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.plans-page__subtitle {
+  margin-top: 0.65rem;
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.plans-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(220px, 0.8fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.plans-summary__card,
+.plan-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1.4rem;
+}
+
+.plans-summary__card {
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+}
+
+.plans-summary__eyebrow {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.plans-summary__card h2 {
+  margin: 0.45rem 0 0;
+  font-size: 1.6rem;
+}
+
+.plans-summary__storage {
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plans-summary__meta {
+  margin-top: 0.45rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.plans-summary__warning {
+  margin-top: 0.9rem;
+  border-radius: 14px;
+  padding: 0.8rem 0.95rem;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  color: #92400e;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.plans-summary__actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 260px;
+}
+
+.plan-card--current {
+  border-color: rgba(37, 99, 235, 0.3);
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.08);
+}
+
+.plan-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.plan-card__name {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.plan-card__price {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.plan-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.plan-card__badge--pending {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.plan-card__storage {
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.plan-card__hint {
+  color: var(--muted);
+  line-height: 1.55;
+  flex: 1 1 auto;
+}
+
+/* ========================================
    Map Page
    ======================================== */
 .map-page {
@@ -2956,6 +3143,18 @@ select.input {
     order: -1;
   }
 
+  .plans-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .plans-summary__actions {
+    justify-content: flex-start;
+  }
+
+  .plans-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .signature-dialog {
     width: 100%;
   }
@@ -2989,6 +3188,18 @@ select.input {
   .profile-card {
     padding: 1.25rem;
     border-radius: 16px;
+  }
+
+  .plans-page {
+    padding: 1rem;
+  }
+
+  .plans-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-card {
+    min-height: auto;
   }
 
   .signature-modal {

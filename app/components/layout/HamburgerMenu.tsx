@@ -87,6 +87,12 @@ export default function HamburgerMenu({ username }: HamburgerMenuProps) {
       label: "Footprints",
       active: pathname === "/dashboard/map",
     },
+    {
+      href: "/dashboard/plans" as Route,
+      icon: "workspace_premium",
+      label: "Plans",
+      active: pathname === "/dashboard/plans",
+    },
   ];
 
   return (

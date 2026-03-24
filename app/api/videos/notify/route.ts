@@ -9,12 +9,13 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
 import { normaliseContentType } from "@/app/lib/contentType";
 import { buildMediaTimelineFields } from "@/app/lib/mediaTimeline";
+import { DEFAULT_PLAN_CODE, getPlanQuotaBytes } from "@/app/lib/plans";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 
 const ddb = new DynamoDBClient({ region });
-const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024 * 1024; // 256GB
+const DEFAULT_QUOTA_BYTES = getPlanQuotaBytes(DEFAULT_PLAN_CODE);
 
 export async function POST(request: Request) {
   try {

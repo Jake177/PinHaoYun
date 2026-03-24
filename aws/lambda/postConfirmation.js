@@ -1,6 +1,8 @@
 "use strict";
 const { DynamoDBClient, PutItemCommand } = require("@aws-sdk/client-dynamodb");
+const planData = require("../../shared/plans.json");
 const client = new DynamoDBClient({});
+const freePlan = planData.plans.FREE;
 
 exports.handler = async (event) => {
   const tableName = process.env.VIDEOS_TABLE || process.env.USERS_TABLE;
@@ -21,7 +23,10 @@ exports.handler = async (event) => {
         sk: { S: "PROFILE" },
         username: { S: username },
         emailVerified: { BOOL: emailVerified },
-        quotaBytes: { N: String(256 * 1024 * 1024 * 1024) }, // 256GB
+        planCode: { S: "FREE" },
+        planStatus: { S: "free" },
+        isLegacy: { BOOL: false },
+        quotaBytes: { N: String(freePlan.quotaBytes) },
         usedBytes: { N: "0" },
         photoBytes: { N: "0" },
         videoBytes: { N: "0" },

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import VideoUploader from "./VideoUploader";
 import VideoGrid from "./VideoGrid";
 import StorageRing from "../profile/StorageRing";
+import { DEFAULT_PLAN_CODE, getPlanQuotaBytes } from "@/app/lib/plans";
 
 type VideoItem = {
   id: string;
@@ -187,7 +188,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         const data = await resp.json();
         setProfileStats({
           usedBytes: data.usedBytes || 0,
-          quotaBytes: data.quotaBytes || 256 * 1024 * 1024 * 1024,
+          quotaBytes: data.quotaBytes || getPlanQuotaBytes(DEFAULT_PLAN_CODE),
           videosCount: data.videosCount || 0,
           photoCount: data.photoCount || 0,
         });

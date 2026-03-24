@@ -20,6 +20,8 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { decodeIdToken } from "@/app/lib/jwt";
+import { resolveProfileBillingState } from "@/app/lib/profileBilling";
+import { DEFAULT_PLAN_CODE, getPlanQuotaBytes } from "@/app/lib/plans";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const usersTable = process.env.VIDEOS_TABLE || process.env.USERS_TABLE;
@@ -137,6 +139,7 @@ export async function GET() {
     const signatureKey = asString(dbProfile.signatureKey);
     const signatureBucket = asString(dbProfile.signatureBucket) || profileBucket;
     const signatureUrl = await signGetUrl(signatureBucket, signatureKey);
+    const billing = resolveProfileBillingState(dbProfile);
 
     return NextResponse.json({
       // Cognito attributes
@@ -151,7 +154,17 @@ export async function GET() {
       hasSignature: Boolean(signatureKey),
       signatureUpdatedAt: asString(dbProfile.signatureUpdatedAt) || null,
       // DynamoDB stats
-      quotaBytes: dbProfile.quotaBytes || 256 * 1024 * 1024 * 1024, // 256GB default
+      planCode: billing.planCode,
+      planDisplayName: billing.planDisplayName,
+      planPriceLabel: billing.planPriceLabel,
+      planStatus: billing.planStatus,
+      pendingPlanCode: billing.pendingPlanCode,
+      pendingPlanDisplayName: billing.pendingPlanDisplayName,
+      currentPeriodEnd: billing.currentPeriodEnd,
+      gracePeriodEndsAt: billing.gracePeriodEndsAt,
+      cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
+      isLegacy: billing.isLegacy,
+      quotaBytes: billing.quotaBytes || getPlanQuotaBytes(DEFAULT_PLAN_CODE),
       usedBytes: dbProfile.usedBytes || 0,
       photoBytes: dbProfile.photoBytes || 0,
       videoBytes: dbProfile.videoBytes || 0,

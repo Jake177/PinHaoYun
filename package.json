@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "backfill:timeline": "node scripts/backfill-media-timeline.js"
+    "backfill:timeline": "node scripts/backfill-media-timeline.js",
+    "backfill:legacy-membership": "node scripts/backfill-legacy-membership.js"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.922.0",
@@ -27,7 +28,8 @@
     "mapbox-gl": "^3.17.0",
     "next": "^16.1.1",
     "react": "19",
-    "react-dom": "19"
+    "react-dom": "19",
+    "stripe": "^20.4.1"
   },
   "devDependencies": {
     "@types/mapbox-gl": "^3.4.1",

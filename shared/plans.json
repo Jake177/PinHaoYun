@@ -1,0 +1,49 @@
+{
+  "plans": {
+    "FREE": {
+      "displayName": "Free",
+      "storageLabel": "10 GB",
+      "quotaBytes": 10737418240,
+      "priceUsdCents": 0,
+      "priceLabel": "$0 / year",
+      "isPublic": true,
+      "isPaid": false
+    },
+    "PLUS": {
+      "displayName": "Plus",
+      "storageLabel": "256 GB",
+      "quotaBytes": 274877906944,
+      "priceUsdCents": 3999,
+      "priceLabel": "$39.99 / year",
+      "isPublic": true,
+      "isPaid": true
+    },
+    "PRO": {
+      "displayName": "Pro",
+      "storageLabel": "1 TB",
+      "quotaBytes": 1099511627776,
+      "priceUsdCents": 11999,
+      "priceLabel": "$119.99 / year",
+      "isPublic": true,
+      "isPaid": true
+    },
+    "ULTRA": {
+      "displayName": "Ultra",
+      "storageLabel": "5 TB",
+      "quotaBytes": 5497558138880,
+      "priceUsdCents": 29999,
+      "priceLabel": "$299.99 / year",
+      "isPublic": true,
+      "isPaid": true
+    },
+    "LEGACY_5TB": {
+      "displayName": "Legacy 5TB",
+      "storageLabel": "5 TB",
+      "quotaBytes": 5497558138880,
+      "priceUsdCents": 0,
+      "priceLabel": "$0 / year",
+      "isPublic": false,
+      "isPaid": false
+    }
+  }
+}

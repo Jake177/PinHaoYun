@@ -2,8 +2,10 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import StorageRing from "@/app/components/profile/StorageRing";
 import SignaturePadModal from "@/app/components/profile/SignaturePadModal";
+import { DEFAULT_PLAN_CODE, getPlanQuotaBytes } from "@/app/lib/plans";
 
 type SignatureAction = "KEEP" | "REPLACE" | "DELETE";
 
@@ -17,6 +19,16 @@ type ProfileData = {
   signatureUrl: string | null;
   hasSignature: boolean;
   signatureUpdatedAt: string | null;
+  planCode: string;
+  planDisplayName: string;
+  planPriceLabel: string;
+  planStatus: string;
+  pendingPlanCode: string | null;
+  pendingPlanDisplayName: string | null;
+  currentPeriodEnd: string | null;
+  gracePeriodEndsAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  isLegacy: boolean;
   quotaBytes: number;
   usedBytes: number;
   photoBytes: number;
@@ -27,6 +39,17 @@ type ProfileData = {
 };
 
 const BIO_MAX_CHARS = 200;
+
+const formatDate = (value: string | null): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
 
 const formatBytes = (bytes: number): string => {
   if (bytes === 0) return "0 B";
@@ -198,10 +221,33 @@ export default function ProfileClient() {
             <h2>Storage</h2>
             <StorageRing
               usedBytes={profile?.usedBytes || 0}
-              quotaBytes={profile?.quotaBytes || 256 * 1024 * 1024 * 1024}
+              quotaBytes={profile?.quotaBytes || getPlanQuotaBytes(DEFAULT_PLAN_CODE)}
               size={140}
               strokeWidth={12}
             />
+            <div className="profile-membership">
+              <div className="profile-membership__eyebrow">Membership</div>
+              <div className="profile-membership__title">
+                {profile?.planDisplayName || "Free"}
+              </div>
+              <div className="profile-membership__meta">
+                {profile?.isLegacy
+                  ? "Legacy 5TB account"
+                  : profile?.planStatus === "grace_period"
+                    ? `Payment grace until ${formatDate(profile.gracePeriodEndsAt) || "soon"}`
+                    : profile?.pendingPlanDisplayName
+                      ? `Switches to ${profile.pendingPlanDisplayName} next cycle`
+                      : profile?.currentPeriodEnd
+                        ? `Renews ${formatDate(profile.currentPeriodEnd) || "soon"}`
+                        : profile?.planPriceLabel || "Manage your storage plan"}
+              </div>
+              <Link
+                href={"/dashboard/plans" as Route}
+                className="profile-membership__link"
+              >
+                Manage plan
+              </Link>
+            </div>
             <div className="storage-breakdown">
               <div className="storage-breakdown__row">
                 <span className="storage-breakdown__icon storage-breakdown__icon--photo material-symbols-outlined">photo</span>
@@ -382,6 +428,12 @@ export default function ProfileClient() {
                 <div className="profile-view__row">
                   <span className="profile-view__label">Username</span>
                   <span className="profile-view__value">{profile?.preferredUsername || "—"}</span>
+                </div>
+                <div className="profile-view__row">
+                  <span className="profile-view__label">Membership</span>
+                  <span className="profile-view__value">
+                    {profile?.planDisplayName || "—"}
+                  </span>
                 </div>
                 <div className="profile-view__row">
                   <span className="profile-view__label">Gender</span>
