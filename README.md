@@ -17,6 +17,12 @@ Built with Next.js on the frontend, and AWS (Lambda/S3/DynamoDB/SQS/Cognito) for
 ## Key Features
 
 - Secure authentication with Cognito sign-up/sign-in, email verification, and profile editing
+- Membership and billing:
+  - Free, Plus, Pro, Ultra, and grandfathered Legacy 5TB plan definitions
+  - Stripe Checkout for new paid subscriptions
+  - Stripe Billing Portal for customer-managed billing
+  - Next-cycle plan changes through Stripe subscriptions
+  - Stripe webhooks update plan status, quota, billing IDs, grace periods, and cancellation state
 - Fast, resilient uploads with S3 multipart uploads + presigned URLs (progress UI + concurrent uploads)
 - Private media access via short-lived presigned S3 URLs for both originals and thumbnails
 - Best-effort duplicate detection via a quick content hash (first chunk + file size) and a DynamoDB hash lock
@@ -32,12 +38,14 @@ Built with Next.js on the frontend, and AWS (Lambda/S3/DynamoDB/SQS/Cognito) for
   - Manual location editing on a map (keeps original coordinates where available)
 - Footprint map view for videos and photos with location data
 - Safe deletion workflow (SQS):
-  - Marks videos as `DELETING` immediately in DynamoDB
+  - Marks videos/photos as `DELETING` immediately in DynamoDB
   - Deletes original + thumbnail objects in S3 asynchronously
-  - Removes the DynamoDB video record and updates user `usedBytes` and `videosCount`
+  - Removes the DynamoDB media record and updates user `usedBytes`, media-specific byte counters, and media counts
   - Supports single and batch deletion requests
 - Storage quota and reservations:
-  - Default quota is 256GB
+  - New users start on the Free 10GB plan
+  - Legacy users can be backfilled to a permanent free 5TB plan
+  - Paid plans are Plus 256GB, Pro 1TB, and Ultra 5TB
   - Uploads use a reservation (`reservedBytes`) so concurrent uploads don’t oversubscribe storage
 - PWA-ready basics (manifest + icons) so users can add PinHaoYun to the home screen on mobile browsers
 - Mobile-friendly preview experience with a draggable metadata bottom sheet and quick actions (download, delete, edit location)
@@ -51,7 +59,8 @@ app/                 Next.js App Router application
   ui/                Global styles, navbar, fonts
 aws/lambda/          AWS Lambda scripts (background jobs)
 public/              Static assets (logo, PWA manifest)
-messages/            Translation message catalogues (in progress / optional)
+scripts/             Backfill utilities for timeline and legacy membership data
+shared/              Shared plan definitions used by the app and Lambdas
 ```
 
 ## Getting Started (Local Development)
@@ -93,7 +102,9 @@ Some behaviour is controlled by hard-coded defaults in the app/Lambda code:
 - Allowed photo types: JPG / JPEG / PNG / HEIC / HEIF (Live Photo video uses MOV)
 - Multipart part size: 10MB
 - Max concurrent uploads (client): 3
-- Default quota: 256GB (`quotaBytes`)
+- Default new-user quota: 10GB (`FREE`)
+- Legacy backfill quota: 5TB (`LEGACY_5TB`)
+- Paid quotas: 256GB (`PLUS`), 1TB (`PRO`), 5TB (`ULTRA`)
 - Upload grace: +1GB above quota (allows a final upload to finish)
 - Reservation TTL: 1 day (`expiresAt` on `RESERVE#...` items)
 - Presigned URL TTL: 900 seconds by default (`PRESIGN_TTL_SECONDS`)
@@ -124,6 +135,15 @@ All variables are documented in `.env.example`. The most important ones are:
 
 - `VIDEOS_DELETE_QUEUE_URL` (SQS queue URL for deletion)
 - `LOCATION_ENRICH_QUEUE_URL` (SQS queue URL for location enrichment)
+
+### Stripe Billing (required for paid memberships)
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_PLUS_YEARLY`
+- `STRIPE_PRICE_PRO_YEARLY`
+- `STRIPE_PRICE_ULTRA_YEARLY`
+- `NEXT_PUBLIC_APP_URL`
 
 ### Mapbox (required for map features)
 
@@ -240,6 +260,7 @@ This repository is commonly deployed with AWS Amplify Hosting (SSR). At a high l
 - `pnpm start` – run the production build locally
 - `pnpm lint` – lint the project
 - `pnpm backfill:timeline` – populate timeline index attributes on existing media items
+- `pnpm backfill:legacy-membership` – migrate pre-membership profiles to `LEGACY_5TB`
 
 ## Licence
 

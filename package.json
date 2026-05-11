@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --tsBuildInfoFile /tmp/pinhaoyun-tsconfig.tsbuildinfo",
+    "test": "TMPDIR=/tmp vitest run",
     "backfill:timeline": "node scripts/backfill-media-timeline.js",
     "backfill:legacy-membership": "node scripts/backfill-legacy-membership.js"
   },
@@ -32,13 +34,18 @@
     "stripe": "^20.4.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@next/eslint-plugin-next": "16.1.1",
     "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^20.16.10",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
+    "@typescript-eslint/eslint-plugin": "8.46.3",
+    "@typescript-eslint/parser": "8.46.3",
     "esbuild": "^0.27.0",
     "eslint": "^9.36.0",
-    "eslint-config-next": "^15.0.3",
-    "typescript": "~5.8.3"
+    "eslint-plugin-react-hooks": "7.1.1",
+    "typescript": "~5.8.3",
+    "vitest": "^4.1.5"
   }
 }

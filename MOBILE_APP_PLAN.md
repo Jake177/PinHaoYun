@@ -1,5 +1,12 @@
 # PinHaoYun iOS React Native 应用（上传为主）计划
 
+## Current Status
+- Last audited: 2026-05-11.
+- 这是后续路线图，不是已实现功能。
+- 当前仓库没有 `apps/mobile`。
+- 当前 Web API 仍主要依赖 cookie 鉴权；`Authorization: Bearer`、`X-Access-Token`、`/api/auth/refresh` 和登录接口返回移动端 token JSON 尚未实现。
+- 当前 Web 已支持视频、照片、Live Photo 风格配对上传、最近媒体列表、预览、删除、位置编辑、地图和会员计费；移动端计划应复用这些 API，但需要先完成 Header 鉴权与 token 刷新。
+
 ## Summary
 - 保留现有 Web，不改 UI 逻辑。
 - 新增 `apps/mobile`（Bare RN, iOS only），提供登录/注册/验证 + 上传视频/Live Photo + 最近上传列表。
