@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   DynamoDBClient,
@@ -12,60 +12,19 @@ import {
   queryAllMediaForUser,
   type LibraryMediaItem,
 } from "@/app/lib/mediaLibrary";
+import {
+  buildLibraryFacets,
+  filterMediaItems,
+  normaliseFavoriteFilter,
+  normaliseMediaTypeFilter,
+  type LibraryFilterOptions,
+} from "@/app/lib/mediaLibraryFilters";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const tableName = process.env.VIDEOS_TABLE;
 const timelineIndexName = process.env.TIMELINE_INDEX_NAME?.trim() || "";
 
 const ddb = new DynamoDBClient({ region });
-
-type MonthFacet = {
-  value: string;
-  count: number;
-};
-
-type YearFacet = {
-  value: string;
-  count: number;
-};
-
-const buildFacets = (items: LibraryMediaItem[]) => {
-  const years = new Map<string, number>();
-  const monthsByYear = new Map<string, Map<string, number>>();
-
-  items.forEach((item) => {
-    const mediaAt = item.mediaAt || "";
-    const year = mediaAt.slice(0, 4);
-    const month = mediaAt.slice(5, 7);
-    if (!/^\d{4}$/.test(year)) return;
-
-    years.set(year, (years.get(year) || 0) + 1);
-
-    if (/^\d{2}$/.test(month)) {
-      const yearMonths = monthsByYear.get(year) || new Map<string, number>();
-      yearMonths.set(month, (yearMonths.get(month) || 0) + 1);
-      monthsByYear.set(year, yearMonths);
-    }
-  });
-
-  const yearList: YearFacet[] = Array.from(years.entries())
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([value, count]) => ({ value, count }));
-
-  const monthMap = Object.fromEntries(
-    Array.from(monthsByYear.entries()).map(([year, monthCounts]) => [
-      year,
-      Array.from(monthCounts.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([value, count]) => ({ value, count })) satisfies MonthFacet[],
-    ]),
-  ) as Record<string, MonthFacet[]>;
-
-  return {
-    years: yearList,
-    monthsByYear: monthMap,
-  };
-};
 
 const listFacetsViaTimelineIndex = async (email: string) => {
   const items: LibraryMediaItem[] = [];
@@ -99,7 +58,7 @@ const listFacetsViaTimelineIndex = async (email: string) => {
   return items;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     if (!tableName) {
       return NextResponse.json(
@@ -123,6 +82,13 @@ export async function GET() {
       return NextResponse.json({ error: "Missing user id" }, { status: 401 });
     }
 
+    const filters: LibraryFilterOptions = {
+      query: request.nextUrl.searchParams.get("q"),
+      mediaType: normaliseMediaTypeFilter(request.nextUrl.searchParams.get("type")),
+      favorite: normaliseFavoriteFilter(
+        request.nextUrl.searchParams.get("favorite"),
+      ),
+    };
     let items: LibraryMediaItem[] | null = null;
 
     if (timelineIndexName) {
@@ -144,10 +110,11 @@ export async function GET() {
       });
     }
 
-    const facets = buildFacets(items);
+    const filteredItems = filterMediaItems(items, filters);
+    const facets = buildLibraryFacets(filteredItems);
     return NextResponse.json({
       ...facets,
-      totalCount: items.length,
+      totalCount: filteredItems.length,
     });
   } catch (error: any) {
     console.error("[videos/facets] error", error);

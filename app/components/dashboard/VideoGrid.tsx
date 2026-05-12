@@ -36,6 +36,8 @@ type VideoItem = {
   rotation?: number;
   captureAlt?: number;
   size?: number;
+  isFavorite?: boolean;
+  favoritedAt?: string | null;
 };
 
 type VideoGridProps = {
@@ -60,6 +62,10 @@ type VideoGridProps = {
     },
     mediaType?: "VIDEO" | "PHOTO",
   ) => Promise<void>;
+  onToggleFavorite?: (
+    video: VideoItem,
+    isFavorite: boolean,
+  ) => Promise<{ isFavorite: boolean; favoritedAt?: string | null }>;
 };
 
 const formatSize = (value?: number) => {
@@ -113,6 +119,7 @@ export default function VideoGrid({
   selectedIds,
   onToggleSelect,
   onUpdateLocation,
+  onToggleFavorite,
 }: VideoGridProps) {
   const [preview, setPreview] = useState<VideoItem | null>(null);
   const [showMeta, setShowMeta] = useState(true);
@@ -124,6 +131,9 @@ export default function VideoGrid({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationSaving, setLocationSaving] = useState(false);
   const [isPlayingLive, setIsPlayingLive] = useState(false);
+  const [favoriteUpdatingIds, setFavoriteUpdatingIds] = useState<Set<string>>(
+    new Set(),
+  );
   const liveVideoRef = useRef<HTMLVideoElement>(null);
 
   const previewIsHeicPhoto =
@@ -344,6 +354,32 @@ export default function VideoGrid({
     }
   };
 
+  const handleToggleFavorite = async (video: VideoItem) => {
+    if (!onToggleFavorite || favoriteUpdatingIds.has(video.id)) return;
+    const nextFavorite = !video.isFavorite;
+    setFavoriteUpdatingIds((prev) => new Set(prev).add(video.id));
+    try {
+      const result = await onToggleFavorite(video, nextFavorite);
+      setPreview((prev) =>
+        prev?.id === video.id
+          ? {
+              ...prev,
+              isFavorite: result.isFavorite,
+              favoritedAt: result.favoritedAt || null,
+            }
+          : prev,
+      );
+    } catch (err: any) {
+      setDeleteError(err?.message || "Favorite update failed.");
+    } finally {
+      setFavoriteUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(video.id);
+        return next;
+      });
+    }
+  };
+
   return (
     <>
       {videos.length === 0 ? (
@@ -366,6 +402,7 @@ export default function VideoGrid({
                 const hasLiveVideo = Boolean(video.liveVideoUrl);
                 const isSelecting = Boolean(selectionMode && onToggleSelect);
                 const isSelected = Boolean(isSelecting && selectedIds?.has(video.id));
+                const favoriteUpdating = favoriteUpdatingIds.has(video.id);
                 const handleSelect = () => {
                   if (!isSelecting) return;
                   onToggleSelect?.(video.id);
@@ -397,6 +434,33 @@ export default function VideoGrid({
                       >
                         <span className="material-symbols-outlined">
                           {isSelected ? "check_circle" : "radio_button_unchecked"}
+                        </span>
+                      </button>
+                    ) : null}
+                    {!isSelecting ? (
+                      <button
+                        type="button"
+                        className={`video-favorite ${
+                          video.isFavorite ? "video-favorite--active" : ""
+                        }`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleToggleFavorite(video);
+                        }}
+                        disabled={!onToggleFavorite || favoriteUpdating}
+                        aria-label={
+                          video.isFavorite
+                            ? "Remove from favorites"
+                            : "Add to favorites"
+                        }
+                        title={
+                          video.isFavorite
+                            ? "Remove from favorites"
+                            : "Add to favorites"
+                        }
+                      >
+                        <span className="material-symbols-outlined">
+                          {video.isFavorite ? "star" : "star_outline"}
                         </span>
                       </button>
                     ) : null}
@@ -655,6 +719,29 @@ export default function VideoGrid({
             {/* Action buttons */}
             <div className="preview-actions">
               <div className="preview-actions__bar">
+                <button
+                  type="button"
+                  className={`pill pill--icon ${
+                    preview.isFavorite ? "pill--active" : ""
+                  }`}
+                  onClick={() => void handleToggleFavorite(preview)}
+                  disabled={!onToggleFavorite || favoriteUpdatingIds.has(preview.id)}
+                  aria-label={
+                    preview.isFavorite
+                      ? "Remove from favorites"
+                      : "Add to favorites"
+                  }
+                  aria-pressed={Boolean(preview.isFavorite)}
+                  title={
+                    preview.isFavorite
+                      ? "Remove from favorites"
+                      : "Add to favorites"
+                  }
+                >
+                  <span className="material-symbols-outlined">
+                    {preview.isFavorite ? "star" : "star_outline"}
+                  </span>
+                </button>
                 <button
                   type="button"
                   className={`pill pill--icon ${showMeta ? "pill--active" : ""}`}

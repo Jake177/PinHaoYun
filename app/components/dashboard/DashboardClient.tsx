@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Route } from "next";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import VideoUploader from "./VideoUploader";
 import VideoGrid from "./VideoGrid";
 import StorageRing from "../profile/StorageRing";
@@ -33,6 +35,8 @@ type VideoItem = {
   codec?: string;
   rotation?: number;
   captureAlt?: number;
+  isFavorite?: boolean;
+  favoritedAt?: string | null;
 };
 
 type DashboardClientProps = {
@@ -45,6 +49,8 @@ type LibraryFacets = {
   monthsByYear: Record<string, Array<{ value: string; count: number }>>;
 };
 
+type MediaTypeFilter = "" | "VIDEO" | "PHOTO";
+
 const PAGE_SIZE = 20;
 
 const formatBytes = (bytes: number): string => {
@@ -56,14 +62,34 @@ const formatBytes = (bytes: number): string => {
   return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[i]}`;
 };
 
-export default function DashboardClient({ userId, username }: DashboardClientProps) {
+export default function DashboardClient({
+  userId: _userId,
+  username,
+}: DashboardClientProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filterYear, setFilterYear] = useState("");
-  const [filterMonth, setFilterMonth] = useState(""); // 01-12
+  const initialDate = searchParams.get("date") || "";
+  const [searchQuery, setSearchQuery] = useState(
+    () => searchParams.get("q") || "",
+  );
+  const [filterType, setFilterType] = useState<MediaTypeFilter>(() => {
+    const value = searchParams.get("type");
+    return value === "VIDEO" || value === "PHOTO" ? value : "";
+  });
+  const [favoriteOnly, setFavoriteOnly] = useState(
+    () => searchParams.get("favorite") === "true",
+  );
+  const [filterYear, setFilterYear] = useState(() =>
+    /^\d{4}/.test(initialDate) ? initialDate.slice(0, 4) : "",
+  );
+  const [filterMonth, setFilterMonth] = useState(() =>
+    /^\d{4}-\d{2}/.test(initialDate) ? initialDate.slice(5, 7) : "",
+  ); // 01-12
   const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const nextCursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
@@ -91,11 +117,29 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     return undefined;
   }, [filterYear, filterMonth]);
 
+  const appendFilterParams = useCallback(
+    (params: URLSearchParams) => {
+      const trimmedQuery = searchQuery.trim();
+      const date = buildDateQuery();
+      if (trimmedQuery) params.set("q", trimmedQuery);
+      if (filterType) params.set("type", filterType);
+      if (favoriteOnly) params.set("favorite", "true");
+      if (date) params.set("date", date);
+    },
+    [buildDateQuery, favoriteOnly, filterType, searchQuery],
+  );
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    appendFilterParams(params);
+    const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    router.replace(nextUrl as Route, { scroll: false });
+  }, [appendFilterParams, pathname, router]);
+
   const fetchVideos = useCallback(async (reset = true) => {
     if (reset) {
       setLoading(true);
       nextCursorRef.current = null;
-      setNextCursor(null);
     } else {
       if (loadingMoreRef.current) return;
       loadingMoreRef.current = true;
@@ -106,9 +150,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     try {
       const params = new URLSearchParams();
       params.set("limit", String(PAGE_SIZE));
-
-      const date = buildDateQuery();
-      if (date) params.set("date", date);
+      appendFilterParams(params);
       if (!reset && nextCursorRef.current) {
         params.set("cursor", nextCursorRef.current);
       }
@@ -141,7 +183,6 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
       }
       const newCursor = data.nextCursor || null;
       nextCursorRef.current = newCursor;
-      setNextCursor(newCursor);
       setHasMore(data.hasMore ?? false);
     } catch (err: any) {
       setError(err?.message || "Failed to load videos.");
@@ -153,7 +194,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
         loadingMoreRef.current = false;
       }
     }
-  }, [buildDateQuery]);
+  }, [appendFilterParams]);
 
   const loadMoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -177,8 +218,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
   // Initial load and refresh when filter changes.
   useEffect(() => {
     fetchVideos(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterYear, filterMonth]);
+  }, [fetchVideos]);
 
 
   const fetchProfile = useCallback(async () => {
@@ -200,7 +240,10 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
 
   const fetchFacets = useCallback(async () => {
     try {
-      const resp = await fetch("/api/videos/facets");
+      const params = new URLSearchParams();
+      appendFilterParams(params);
+      const query = params.toString();
+      const resp = await fetch(`/api/videos/facets${query ? `?${query}` : ""}`);
       if (!resp.ok) return;
       const data = (await resp.json()) as LibraryFacets;
       setLibraryFacets({
@@ -213,7 +256,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     } catch {
       // ignore
     }
-  }, []);
+  }, [appendFilterParams]);
 
   useEffect(() => {
     fetchFacets();
@@ -316,7 +359,81 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
     } finally {
       setBatchDeleting(false);
     }
-  }, [batchDeleting, profileStats, resetSelection, selectedIds, videos]);
+  }, [batchDeleting, fetchFacets, profileStats, resetSelection, selectedIds, videos]);
+
+  const applyFavoritePatch = useCallback(
+    (items: Array<{ id: string; type?: "VIDEO" | "PHOTO" }>, isFavorite: boolean) => {
+      const now = new Date().toISOString();
+      const keys = new Set(items.map((item) => `${item.type || "VIDEO"}:${item.id}`));
+      setVideos((prev) =>
+        prev
+          .map((item) =>
+            keys.has(`${item.type || "VIDEO"}:${item.id}`)
+              ? {
+                  ...item,
+                  isFavorite,
+                  favoritedAt: isFavorite ? now : null,
+                }
+              : item,
+          )
+          .filter((item) => !favoriteOnly || item.isFavorite),
+      );
+    },
+    [favoriteOnly],
+  );
+
+  const postFavorite = useCallback(
+    async (
+      items: Array<{ id: string; type?: "VIDEO" | "PHOTO" }>,
+      isFavorite: boolean,
+    ) => {
+      const resp = await fetch("/api/videos/favorite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, isFavorite }),
+      });
+      const data = (await resp.json().catch(() => ({}))) as {
+        error?: string;
+        favoritedAt?: string | null;
+      };
+      if (!resp.ok) {
+        throw new Error(data.error || "Favorite update failed.");
+      }
+      applyFavoritePatch(items, isFavorite);
+      await fetchFacets();
+      return {
+        isFavorite,
+        favoritedAt: isFavorite ? data.favoritedAt || new Date().toISOString() : null,
+      };
+    },
+    [applyFavoritePatch, fetchFacets],
+  );
+
+  const handleToggleFavorite = useCallback(
+    async (item: VideoItem, isFavorite: boolean) =>
+      postFavorite([{ id: item.id, type: item.type || "VIDEO" }], isFavorite),
+    [postFavorite],
+  );
+
+  const handleBatchFavorite = useCallback(
+    async (isFavorite: boolean) => {
+      if (batchDeleting || selectedIds.size === 0) return;
+      const selectedItems = videos
+        .filter((v) => selectedIds.has(v.id))
+        .map((item) => ({ id: item.id, type: item.type || "VIDEO" }));
+      setBatchDeleting(true);
+      setBatchError(null);
+      try {
+        await postFavorite(selectedItems, isFavorite);
+        resetSelection();
+      } catch (err: any) {
+        setBatchError(err?.message || "Favorite update failed");
+      } finally {
+        setBatchDeleting(false);
+      }
+    },
+    [batchDeleting, postFavorite, resetSelection, selectedIds, videos],
+  );
 
   const handleUpdateLocation = useCallback(
     async (
@@ -465,6 +582,30 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           <div className="panel-title">
             <h2>My Library</h2>
             <div className="panel-filters">
+              <input
+                className="input library-search"
+                type="search"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  resetSelection();
+                }}
+                placeholder="Search library"
+                aria-label="Search library"
+              />
+              <select
+                className="input"
+                value={filterType}
+                onChange={(e) => {
+                  setFilterType(e.target.value as MediaTypeFilter);
+                  resetSelection();
+                }}
+                aria-label="Filter by media type"
+              >
+                <option value="">All media</option>
+                <option value="PHOTO">Photos</option>
+                <option value="VIDEO">Videos</option>
+              </select>
               <select
                 className="input"
                 value={filterYear}
@@ -499,6 +640,21 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                className={`pill pill--icon ${favoriteOnly ? "pill--active" : ""}`}
+                onClick={() => {
+                  setFavoriteOnly((prev) => !prev);
+                  resetSelection();
+                }}
+                aria-label={favoriteOnly ? "Show all media" : "Show favorites only"}
+                aria-pressed={favoriteOnly}
+                title={favoriteOnly ? "Show all media" : "Show favorites only"}
+              >
+                <span className="material-symbols-outlined">
+                  {favoriteOnly ? "star" : "star_outline"}
+                </span>
+              </button>
             </div>
           </div>
           <div className="panel-actions">
@@ -551,6 +707,22 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
               <div className="panel-actions__swap panel-actions__confirm">
                 <button
                   type="button"
+                  className="pill"
+                  onClick={() => void handleBatchFavorite(true)}
+                  disabled={selectedIds.size === 0 || batchDeleting}
+                >
+                  Favorite
+                </button>
+                <button
+                  type="button"
+                  className="pill"
+                  onClick={() => void handleBatchFavorite(false)}
+                  disabled={selectedIds.size === 0 || batchDeleting}
+                >
+                  Unfavorite
+                </button>
+                <button
+                  type="button"
                   className="pill pill--error"
                   onClick={() => setShowBatchConfirm(true)}
                   disabled={selectedIds.size === 0 || batchDeleting}
@@ -586,6 +758,7 @@ export default function DashboardClient({ userId, username }: DashboardClientPro
           selectedIds={selectedIds}
           onToggleSelect={toggleSelection}
           onUpdateLocation={handleUpdateLocation}
+          onToggleFavorite={handleToggleFavorite}
         />
       </section>
       {showBatchConfirm ? (
