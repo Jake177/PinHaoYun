@@ -45,6 +45,8 @@ export type LibraryMediaItem = {
   liveVideoKey?: string;
   liveVideoBucket?: string;
   liveVideoSize?: number;
+  isFavorite?: boolean;
+  favoritedAt?: string;
   mediaAt?: string;
   mediaAtSource?: string;
 };
@@ -130,6 +132,8 @@ export const mapDbMediaItem = (item: RawItem): LibraryMediaItem => {
     liveVideoKey: asString(item.liveVideoKey),
     liveVideoBucket: asString(item.liveVideoBucket),
     liveVideoSize: asNumber(item.liveVideoSize),
+    isFavorite: item.isFavorite === true,
+    favoritedAt: asString(item.favoritedAt),
     mediaAt: normaliseIsoTimestamp(asString(item.mediaAt)) || timeline.mediaAt,
     mediaAtSource: asString(item.mediaAtSource) || timeline.mediaAtSource,
   };

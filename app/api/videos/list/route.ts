@@ -14,6 +14,12 @@ import {
   queryAllMediaForUser,
   type LibraryMediaItem,
 } from "@/app/lib/mediaLibrary";
+import {
+  filterMediaItems,
+  normaliseFavoriteFilter,
+  normaliseMediaTypeFilter,
+  type LibraryFilterOptions,
+} from "@/app/lib/mediaLibraryFilters";
 import { normaliseDatePrefix } from "@/app/lib/mediaTimeline";
 
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
@@ -102,14 +108,6 @@ const encodeCursor = (cursor: CursorState | null): string | null => {
   return Buffer.from(JSON.stringify(cursor)).toString("base64");
 };
 
-const filterByDatePrefix = (
-  items: LibraryMediaItem[],
-  datePrefix: string | null,
-): LibraryMediaItem[] => {
-  if (!datePrefix) return items;
-  return items.filter((item) => (item.mediaAt || "").startsWith(datePrefix));
-};
-
 const withSignedUrls = async (
   items: LibraryMediaItem[],
 ): Promise<LibraryListItem[]> =>
@@ -142,11 +140,13 @@ const listViaTimelineIndex = async ({
   email,
   limit,
   datePrefix,
+  filters,
   cursor,
 }: {
   email: string;
   limit: number;
   datePrefix: string | null;
+  filters: LibraryFilterOptions;
   cursor: CursorState;
 }) => {
   let lastEvaluatedKey = cursor.lastEvaluatedKey || undefined;
@@ -180,8 +180,11 @@ const listViaTimelineIndex = async ({
       ) || [];
 
     page.push(
-      ...items.filter(
-        (item) => item.status !== "DELETING" && item.status !== "DELETED",
+      ...filterMediaItems(
+        items.filter(
+          (item) => item.status !== "DELETING" && item.status !== "DELETED",
+        ),
+        filters,
       ),
     );
     lastEvaluatedKey = response.LastEvaluatedKey;
@@ -199,12 +202,12 @@ const listViaTimelineIndex = async ({
 const listViaPrimaryKeyFallback = async ({
   email,
   limit,
-  datePrefix,
+  filters,
   cursor,
 }: {
   email: string;
   limit: number;
-  datePrefix: string | null;
+  filters: LibraryFilterOptions;
   cursor: CursorState;
 }) => {
   const allMedia = await queryAllMediaForUser({
@@ -212,7 +215,7 @@ const listViaPrimaryKeyFallback = async ({
     tableName: tableName!,
     email,
   });
-  const filtered = filterByDatePrefix(allMedia, datePrefix);
+  const filtered = filterMediaItems(allMedia, filters);
   const offset = Math.max(0, Number(cursor.offset) || 0);
   const items = filtered.slice(offset, offset + limit);
   const nextOffset = offset + items.length;
@@ -254,6 +257,14 @@ export async function GET(request: NextRequest) {
     const datePrefix = normaliseDatePrefix(
       request.nextUrl.searchParams.get("date"),
     );
+    const filters: LibraryFilterOptions = {
+      query: request.nextUrl.searchParams.get("q"),
+      mediaType: normaliseMediaTypeFilter(request.nextUrl.searchParams.get("type")),
+      favorite: normaliseFavoriteFilter(
+        request.nextUrl.searchParams.get("favorite"),
+      ),
+      datePrefix,
+    };
     const limit = Math.min(
       Math.max(Number(limitParam) || DEFAULT_PAGE_SIZE, 1),
       100,
@@ -274,6 +285,7 @@ export async function GET(request: NextRequest) {
           email: email.toLowerCase(),
           limit,
           datePrefix,
+          filters,
           cursor,
         });
       } catch (error: any) {
@@ -288,7 +300,7 @@ export async function GET(request: NextRequest) {
       result = await listViaPrimaryKeyFallback({
         email: email.toLowerCase(),
         limit,
-        datePrefix,
+        filters,
         cursor,
       });
     }
