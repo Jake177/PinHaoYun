@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract photo metadata and create thumbnails with ImageMagick.
 
@@ -17,7 +18,7 @@ const { buildMediaTimelineFields } = require("./timeline");
 const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
+const ddb = protectMediaWrites(new DynamoDBClient({}));
 const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
@@ -598,6 +599,7 @@ exports.handler = async (event) => {
       const fileName = parts[parts.length - 1];
       const photoId = fileName.split("_")[0];
       if (!userId || !photoId) continue;
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
 
       const isLiveVideo = fileName.includes("_live.") || fileName.toLowerCase().endsWith(".mov");
       const now = new Date().toISOString();

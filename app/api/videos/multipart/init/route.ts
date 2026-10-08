@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import {
   S3Client,
   CreateMultipartUploadCommand,
@@ -12,7 +11,7 @@ import {
   TransactWriteItemsCommand,
 } from "@aws-sdk/client-dynamodb";
 import crypto from "node:crypto";
-import { decodeIdToken } from "@/app/lib/jwt";
+import { getSessionUser } from "@/app/lib/sessionUser";
 import { normaliseContentType } from "@/app/lib/contentType";
 import {
   DEFAULT_PLAN_CODE,
@@ -59,13 +58,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const cookieStore = await cookies();
-    const token = cookieStore.get("id_token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(token) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
     const userId =
       (payload.email as string) ||
       (payload["cognito:username"] as string) ||
@@ -113,6 +108,12 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (requestedPhotoId && !/^[a-zA-Z0-9-]{1,128}$/.test(requestedPhotoId)) return NextResponse.json({ error: "Invalid photo id" }, { status: 400 });
+    if (isLiveVideo && requestedPhotoId) {
+      const parent = await ddb.send(new GetItemCommand({ TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: `PHOTO#${requestedPhotoId}` } }, ConsistentRead: true }));
+      if (!parent.Item || ["DELETING", "DELETED"].includes(parent.Item.status?.S || "")) return NextResponse.json({ error: "Parent photo is not available" }, { status: 409 });
+      if (parent.Item.liveUploadConfirmed?.BOOL) return NextResponse.json({ duplicate: true, photoId: requestedPhotoId });
+    }
     const allowedExt = isPhoto
       ? isLiveVideo
         ? ALLOWED_LIVE_VIDEO_EXT
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    if (sizeNumber <= 0 || sizeNumber > MAX_BYTES) {
+    if (!Number.isSafeInteger(sizeNumber) || sizeNumber <= 0 || sizeNumber > MAX_BYTES) {
       return NextResponse.json(
         { error: "File too large (max 2GB)" },
         { status: 400 },
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
         }),
       );
       if (existing.Item) {
-        return NextResponse.json({ duplicate: true });
+        return NextResponse.json({ duplicate: true, photoId: existing.Item.mediaId?.S });
       }
     }
 
@@ -216,6 +217,7 @@ export async function POST(request: Request) {
         Key: key,
         ContentType: resolvedContentType,
         StorageClass: "INTELLIGENT_TIERING",
+        Metadata: { "owner-sub": user.sub },
       }),
     );
 
@@ -246,12 +248,13 @@ export async function POST(request: Request) {
                   UpdateExpression:
                     "SET reservedBytes = reservedBytes + :size, updatedAt = :now",
                   ConditionExpression:
-                    "usedBytes = :used AND reservedBytes = :reserved",
+                    "usedBytes = :used AND reservedBytes = :reserved AND (attribute_not_exists(accountStatus) OR accountStatus = :active)",
                   ExpressionAttributeValues: {
                     ":size": { N: String(sizeNumber) },
                     ":now": { S: now },
                     ":used": { N: String(usedBytes) },
                     ":reserved": { N: String(reservedBytes) },
+                    ":active": { S: "ACTIVE" },
                   },
                 },
               },
@@ -263,6 +266,7 @@ export async function POST(request: Request) {
                     sk: { S: reserveSk },
                     key: { S: key },
                     size: { N: String(sizeNumber) },
+                    uploadId: { S: result.UploadId },
                     createdAt: { S: now },
                     expiresAt: { N: String(expiresAt) },
                     mediaType: { S: isPhoto ? "PHOTO" : "VIDEO" },

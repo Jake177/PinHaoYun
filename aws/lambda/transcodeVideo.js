@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract video metadata with ffprobe and update DynamoDB.
 // Requires ffprobe in a Lambda layer (default path: /opt/bin/ffprobe).
@@ -17,7 +18,7 @@ const { buildMediaTimelineFields } = require("./timeline");
 const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
+const ddb = protectMediaWrites(new DynamoDBClient({}));
 const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
@@ -336,17 +337,13 @@ exports.handler = async (event) => {
         continue;
       }
 
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
       const tmpPath = await downloadToTmp(bucket, decodedKey);
       try {
         const probe = await runFfprobe(tmpPath);
         // Log tags for troubleshooting missing metadata (redact to avoid huge output)
-        const videoStream = (Array.isArray(probe.streams) ? probe.streams : []).find(
-          (s) => s.codec_type === "video",
-        ) || {};
-        console.log("ffprobe tags sample", {
-          formatTags: probe.format?.tags,
-          videoTags: videoStream.tags,
-        });
+
+
         const metadata = extractMetadata(probe);
         let thumbResult = null;
         try {
