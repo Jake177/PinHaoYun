@@ -1,4 +1,4 @@
-const { canProcess, protectMediaWrites } = require("./accountGuard");
+const { canProcess, protectMediaWrites, verifiedUserSub } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract photo metadata and create thumbnails with ImageMagick.
 
@@ -494,17 +494,6 @@ const extractMetadata = async (filePath) => {
     captureAlt: captureAltCandidate,
     orientation: orientationCandidate,
   };
-  console.log("photo metadata sample", {
-    width: result.width,
-    height: result.height,
-    captureTime: result.captureTime,
-    deviceMake: result.deviceMake,
-    deviceModel: result.deviceModel,
-    deviceSoftware: result.deviceSoftware,
-    captureLat: result.captureLat,
-    captureLon: result.captureLon,
-    orientation: result.orientation,
-  });
   return result;
 };
 
@@ -555,6 +544,7 @@ const enqueueLocationEnrichment = async ({ email, photoId, lat, lon }) => {
         QueueUrl: LOCATION_ENRICH_QUEUE_URL,
         MessageBody: JSON.stringify({
           email,
+          userSub: verifiedUserSub(email),
           videoId: photoId,
           mediaType: "PHOTO",
           lat,

@@ -1,4 +1,4 @@
-const { canProcess, protectMediaWrites } = require("./accountGuard");
+const { canProcess, protectMediaWrites, verifiedUserSub } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract video metadata with ffprobe and update DynamoDB.
 // Requires ffprobe in a Lambda layer (default path: /opt/bin/ffprobe).
@@ -6,8 +6,8 @@ const { canProcess, protectMediaWrites } = require("./accountGuard");
 const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const { createWriteStream, createReadStream } = require("node:fs");
-const { unlink } = require("node:fs/promises");
+const { createWriteStream } = require("node:fs");
+const { unlink, readFile } = require("node:fs/promises");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { pipeline } = require("node:stream/promises");
@@ -98,14 +98,14 @@ const makeThumbnail = async ({ bucket, key, userId, videoId, filePath }) => {
       "-i",
       filePath,
       "-ss",
-      "1",
+      "0",
       "-vframes",
       "1",
       "-vf",
       "scale=640:-1",
       tmpThumb,
     ]);
-    const body = createReadStream(tmpThumb);
+    const body = await readFile(tmpThumb);
     await s3.send(
       new PutObjectCommand({
         Bucket: THUMBNAIL_BUCKET,
@@ -132,6 +132,7 @@ const toAttrString = (value) => ({ S: String(value) });
           QueueUrl: LOCATION_ENRICH_QUEUE_URL,
           MessageBody: JSON.stringify({
             email,
+            userSub: verifiedUserSub(email),
             videoId,
             mediaType: "VIDEO",
             lat,
