@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT, type JWTPayload } from "jose";
+import { POLICY_VERSION } from "./mobilePolicy";
 const mock = vi.hoisted(() => ({ keys: [] as Record<string,unknown>[], authorization: null as string|null, cookie: "", access: "", send: vi.fn() }));
 vi.mock("jose", async original => {
   const real = await original<typeof import("jose")>();
@@ -21,7 +22,7 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   mock.authorization = null; mock.cookie = ""; mock.access = ""; mock.send.mockReset();
-  mock.send.mockImplementation(async (command: { input: { Key: { sk: { S: string } } } }) => command.input.Key.sk.S === "PROFILE" ? { Item: { email: { S: "owner@example.invalid" }, sk: { S: "PROFILE" }, userSub: { S: "owner-sub" }, accountStatus: { S: "ACTIVE" } } } : { Item: { userSub: { S: "owner-sub" }, termsVersion: { S: "2026-10-08-beta-1" }, privacyVersion: { S: "2026-10-08-beta-1" } } });
+  mock.send.mockImplementation(async (command: { input: { Key: { sk: { S: string } } } }) => command.input.Key.sk.S === "PROFILE" ? { Item: { email: { S: "owner@example.invalid" }, sk: { S: "PROFILE" }, userSub: { S: "owner-sub" }, accountStatus: { S: "ACTIVE" } } } : { Item: { userSub: { S: "owner-sub" }, termsVersion: { S: POLICY_VERSION }, privacyVersion: { S: POLICY_VERSION } } });
 });
 describe("actual JWT signature and claims", () => {
   it("accepts signed, verified identities", async () => { expect((await verify.verifyIdToken(await token())).sub).toBe("owner-sub"); });

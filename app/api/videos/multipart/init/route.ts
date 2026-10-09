@@ -19,6 +19,7 @@ import {
   UPLOAD_GRACE_BYTES,
 } from "@/app/lib/plans";
 import { resolveProfileBillingState } from "@/app/lib/profileBilling";
+import { backupSuppressed, suppressionCheck } from "@/app/lib/backupDeletion";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 const ALLOWED_VIDEO_EXT = ["mov", "mp4", "hevc", "m4v"];
@@ -78,6 +79,8 @@ export async function POST(request: Request) {
       mediaType?: "VIDEO" | "PHOTO";
       mediaRole?: "image" | "liveVideo";
       photoId?: string;
+      uploadSource?: "manual" | "automatic";
+      requestId?: string;
     };
     const {
       fileName = "",
@@ -89,8 +92,13 @@ export async function POST(request: Request) {
       photoId: requestedPhotoId,
     } = body || {};
     const sizeNumber = Number(size || 0);
+    const automatic = body?.uploadSource === "automatic";
+    if (body?.requestId !== undefined && (typeof body.requestId !== "string" || !/^[a-f0-9-]{36}$/i.test(body.requestId))) return NextResponse.json({ error: "Invalid upload request id" }, { status: 400 });
+    let backupHash = contentHash;
+    const skip = () => NextResponse.json({ duplicate: false, skipped: true, skipReason: "CLOUD_DELETED" });
+    if (!Number.isSafeInteger(sizeNumber) || !["PHOTO", "VIDEO"].includes(mediaType)) return NextResponse.json({ error: "Invalid upload parameters" }, { status: 400 });
 
-    if (!contentHash && !(mediaType === "PHOTO" && mediaRole === "liveVideo")) {
+    if (!(mediaType === "PHOTO" && mediaRole === "liveVideo") && (typeof contentHash !== "string" || !/^[a-f0-9]{64}-\d+$/.test(contentHash))) {
       return NextResponse.json(
         { error: "Missing content hash" },
         { status: 400 },
@@ -111,8 +119,9 @@ export async function POST(request: Request) {
     if (requestedPhotoId && !/^[a-zA-Z0-9-]{1,128}$/.test(requestedPhotoId)) return NextResponse.json({ error: "Invalid photo id" }, { status: 400 });
     if (isLiveVideo && requestedPhotoId) {
       const parent = await ddb.send(new GetItemCommand({ TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: `PHOTO#${requestedPhotoId}` } }, ConsistentRead: true }));
-      if (!parent.Item || ["DELETING", "DELETED"].includes(parent.Item.status?.S || "")) return NextResponse.json({ error: "Parent photo is not available" }, { status: 409 });
+      if (!parent.Item || ["DELETING", "DELETED"].includes(parent.Item.status?.S || "")) return automatic ? skip() : NextResponse.json({ error: "Parent photo is not available" }, { status: 409 });
       if (parent.Item.liveUploadConfirmed?.BOOL) return NextResponse.json({ duplicate: true, photoId: requestedPhotoId });
+      backupHash = parent.Item.contentHash?.S;
     }
     const allowedExt = isPhoto
       ? isLiveVideo
@@ -144,17 +153,22 @@ export async function POST(request: Request) {
         }),
       );
       if (existing.Item) {
-        return NextResponse.json({ duplicate: true, photoId: existing.Item.mediaId?.S });
+        const target = await ddb.send(new GetItemCommand({ TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: `${mediaType}#${existing.Item.mediaId?.S}` } }, ConsistentRead: true }));
+        if (target.Item && !["DELETING", "DELETED"].includes(target.Item.status?.S || "")) return NextResponse.json({ duplicate: true, photoId: existing.Item.mediaId?.S });
+        if (automatic && ["DELETING", "DELETED"].includes(target.Item?.status?.S || "")) return skip();
       }
     }
+    if (automatic && (!backupHash || !/^[a-f0-9]{64}-\d+$/.test(backupHash))) return NextResponse.json({ error: "Invalid backup hash" }, { status: 400 });
+    if (automatic && await backupSuppressed(normalizedUser, mediaType, backupHash)) return skip();
 
     const safeName = sanitizeName(fileName || `upload.${ext || "mp4"}`);
     const id = isPhoto
       ? (requestedPhotoId?.trim() || crypto.randomUUID())
-      : crypto.randomUUID();
+      : (body.requestId || crypto.randomUUID());
+    const requestId = body.requestId || crypto.randomUUID();
     const keyPrefix = isPhoto ? "photo" : "video";
     const keyName = isPhoto && isLiveVideo
-      ? `${id}_live.${ext || "mov"}`
+      ? (body.requestId ? `${id}_live-${requestId}.${ext || "mov"}` : `${id}_live.${ext || "mov"}`)
       : `${id}_${safeName}`;
     const key = `${keyPrefix}/${normalizedUser}/${keyName}`;
     const mediaId = id;
@@ -165,6 +179,19 @@ export async function POST(request: Request) {
       );
     }
     const now = new Date().toISOString();
+    const reserveSk = isPhoto ? `RESERVE#PHOTO#${mediaId}` : `RESERVE#${keyName}`;
+    const previous = await ddb.send(new GetItemCommand({ TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: reserveSk } }, ConsistentRead: true }));
+    if (previous.Item) {
+      const r = previous.Item;
+      const keyMatches = r.key?.S === key || (isLiveVideo && !r.requestId?.S && r.key?.S === `${keyPrefix}/${normalizedUser}/${id}_live.${ext || "mov"}`);
+      const matches = keyMatches && Number(r.size?.N) === sizeNumber && (!r.backupHash?.S || r.backupHash.S === backupHash) && (!r.ownerSub?.S || r.ownerSub.S === user.sub) && (r.uploadSource?.S || "manual") === (automatic ? "automatic" : "manual");
+      if (matches) return NextResponse.json({ duplicate: false, resumed: true, key: r.key?.S, bucket: originalBucket, uploadId: r.uploadId?.S, photoId: isPhoto ? mediaId : undefined });
+      return NextResponse.json({ error: "Another transfer is updating this item. Try again shortly.", code: "UPLOAD_IN_PROGRESS" }, { status: 409 });
+    }
+    if (!isLiveVideo) {
+      const existing = await ddb.send(new GetItemCommand({ TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: `${mediaType}#${isPhoto ? mediaId : keyName}` } }, ConsistentRead: true }));
+      if (existing.Item && (existing.Item.uploadConfirmed?.BOOL || ["DELETING", "DELETED"].includes(existing.Item.status?.S || ""))) return NextResponse.json({ error: "Upload identity is no longer available. Choose this original again." }, { status: 409 });
+    }
 
     await ddb.send(
       new UpdateItemCommand({
@@ -175,10 +202,12 @@ export async function POST(request: Request) {
         },
         UpdateExpression:
           "SET quotaBytes = if_not_exists(quotaBytes, :quota), usedBytes = if_not_exists(usedBytes, :zero), reservedBytes = if_not_exists(reservedBytes, :zero), createdAt = if_not_exists(createdAt, :now), updatedAt = :now",
+        ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :subject)",
         ExpressionAttributeValues: {
           ":quota": { N: String(DEFAULT_QUOTA_BYTES) },
           ":zero": { N: "0" },
           ":now": { S: now },
+          ":active": { S: "ACTIVE" }, ":subject": { S: user.sub },
         },
       }),
     );
@@ -217,7 +246,7 @@ export async function POST(request: Request) {
         Key: key,
         ContentType: resolvedContentType,
         StorageClass: "INTELLIGENT_TIERING",
-        Metadata: { "owner-sub": user.sub },
+        Metadata: { "owner-sub": user.sub, "upload-source": automatic ? "automatic" : "manual", "upload-request-id": requestId, ...(backupHash ? { "backup-hash": backupHash } : {}) },
       }),
     );
 
@@ -228,7 +257,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const reserveSk = isPhoto ? `RESERVE#PHOTO#${mediaId}` : `RESERVE#${keyName}`;
     const expiresAt = Math.floor(Date.now() / 1000) + RESERVE_TTL_SECONDS;
     let reserved = false;
     let attempt = 0;
@@ -238,6 +266,7 @@ export async function POST(request: Request) {
         await ddb.send(
           new TransactWriteItemsCommand({
             TransactItems: [
+              ...(automatic ? [suppressionCheck(normalizedUser, mediaType, backupHash!)] : []),
               {
                 Update: {
                   TableName: tableName,
@@ -248,13 +277,14 @@ export async function POST(request: Request) {
                   UpdateExpression:
                     "SET reservedBytes = reservedBytes + :size, updatedAt = :now",
                   ConditionExpression:
-                    "usedBytes = :used AND reservedBytes = :reserved AND (attribute_not_exists(accountStatus) OR accountStatus = :active)",
+                    "usedBytes = :used AND reservedBytes = :reserved AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :owner)",
                   ExpressionAttributeValues: {
                     ":size": { N: String(sizeNumber) },
                     ":now": { S: now },
                     ":used": { N: String(usedBytes) },
                     ":reserved": { N: String(reservedBytes) },
                     ":active": { S: "ACTIVE" },
+                    ":owner": { S: user.sub },
                   },
                 },
               },
@@ -270,6 +300,9 @@ export async function POST(request: Request) {
                     createdAt: { S: now },
                     expiresAt: { N: String(expiresAt) },
                     mediaType: { S: isPhoto ? "PHOTO" : "VIDEO" },
+                    uploadSource: { S: automatic ? "automatic" : "manual" },
+                    ownerSub: { S: user.sub }, requestId: { S: requestId },
+                    ...(backupHash ? { backupHash: { S: backupHash } } : {}),
                     mediaRole: {
                       S: isPhoto ? (isLiveVideo ? "liveVideo" : "image") : "video",
                     },
@@ -282,6 +315,10 @@ export async function POST(request: Request) {
         );
         reserved = true;
       } catch (error: any) {
+        if (automatic && error?.name === "TransactionCanceledException" && await backupSuppressed(normalizedUser, mediaType, backupHash)) {
+          await s3.send(new AbortMultipartUploadCommand({ Bucket: originalBucket, Key: key, UploadId: result.UploadId }));
+          return skip();
+        }
         if (error?.name !== "TransactionCanceledException") {
           throw error;
         }

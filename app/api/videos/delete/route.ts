@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { DynamoDBClient, GetItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
+import { DynamoDBClient, GetItemCommand, TransactWriteItemsCommand } from "@aws-sdk/client-dynamodb";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { getSessionUser } from "@/app/lib/sessionUser";
+import { suppressionKey } from "@/app/lib/backupDeletion";
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const ddb = new DynamoDBClient({ region }); const sqs = new SQSClient({ region });
 export async function POST(request: Request) {
@@ -26,7 +27,13 @@ export async function POST(request: Request) {
     if (result.Item.status?.S === "DELETED") { count++; continue; }
     // Persist the marker before publishing. The reservation sweeper republishes
     // DELETING records if SQS is temporarily unavailable.
-    await ddb.send(new UpdateItemCommand({ TableName: process.env.VIDEOS_TABLE, Key, UpdateExpression: "SET #state = :deleting, deletedAt = if_not_exists(deletedAt, :now)", ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(#state) OR #state <> :deleted)", ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":deleting": { S: "DELETING" }, ":deleted": { S: "DELETED" }, ":now": { S: new Date().toISOString() } } }));
+    const now = new Date().toISOString();
+    const hash = result.Item.contentHash?.S;
+    await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
+      { ConditionCheck: { TableName: process.env.VIDEOS_TABLE, Key: { email: { S: user.email }, sk: { S: "PROFILE" } }, ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :subject)", ExpressionAttributeValues: { ":active": { S: "ACTIVE" }, ":subject": { S: user.sub } } } },
+      { Update: { TableName: process.env.VIDEOS_TABLE, Key, UpdateExpression: "SET #state = :deleting, deletedAt = if_not_exists(deletedAt, :now)", ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(#state) OR #state <> :deleted)", ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":deleting": { S: "DELETING" }, ":deleted": { S: "DELETED" }, ":now": { S: now } } } },
+      ...(hash ? [{ Put: { TableName: process.env.VIDEOS_TABLE, Item: { ...suppressionKey(user.email, item.type, hash), deletedAt: { S: now }, ownerSub: { S: user.sub } } } }] : []),
+    ] }));
     await sqs.send(new SendMessageCommand({ QueueUrl: queue, MessageBody: JSON.stringify({ email: user.email, mediaId: item.id, mediaType: item.type, userSub: user.sub }) }));
     count++;
   }

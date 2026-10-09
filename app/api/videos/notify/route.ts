@@ -5,17 +5,22 @@ import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { getSessionUser } from "@/app/lib/sessionUser";
 import { normaliseContentType } from "@/app/lib/contentType";
 import { buildMediaTimelineFields } from "@/app/lib/mediaTimeline";
+import { rejectDeletedBackup, suppressionCheck, finalizeConcurrentDuplicate } from "@/app/lib/backupDeletion";
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const ddb = new DynamoDBClient({ region }); const s3 = new S3Client({ region });
 export async function POST(request: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let uploadKey: string | undefined;
+  let uploadHash: string | undefined;
   try {
     const body = await request.json();
     const mediaType = body.mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
     const live = mediaType === "PHOTO" && body.mediaRole === "liveVideo";
     const key = body.key;
     if (typeof key !== "string" || !key.startsWith(`${mediaType === "PHOTO" ? "photo" : "video"}/${user.email}/`) || body.bucket !== process.env.S3_ORIGINAL_BUCKET) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    uploadKey = key;
+    uploadHash = typeof body.contentHash === "string" ? body.contentHash : undefined;
     const fileName = key.split("/").pop()!;
     const mediaId = mediaType === "PHOTO" ? fileName.split("_")[0] : fileName;
     if (body.photoId && body.photoId !== mediaId) return NextResponse.json({ error: "Invalid photo identity" }, { status: 400 });
@@ -24,6 +29,11 @@ export async function POST(request: Request) {
     const dbKey = { email: { S: user.email }, sk: { S: `${mediaType}#${mediaId}` } };
     const marker = live ? "liveUploadConfirmed" : "uploadConfirmed";
     const existing = await ddb.send(new GetItemCommand({ TableName: table, Key: dbKey, ConsistentRead: true }));
+    if (existing.Item?.duplicateOf?.S) {
+      const target = await ddb.send(new GetItemCommand({ TableName: table, Key: { email: { S: user.email }, sk: { S: `${mediaType}#${existing.Item.duplicateOf.S}` } }, ConsistentRead: true }));
+      if (target.Item && !["DELETING", "DELETED"].includes(target.Item.status?.S || "")) return NextResponse.json({ ok: true, duplicate: true, photoId: existing.Item.duplicateOf.S });
+    }
+    if (["DELETING", "DELETED"].includes(existing.Item?.status?.S || "") || await rejectDeletedBackup(user.email, user.sub, key)) return NextResponse.json({ error: "Cloud copy was deleted", code: "CLOUD_DELETED" }, { status: 410 });
     if (existing.Item?.[marker]?.BOOL && existing.Item?.[live ? "liveVideoKey" : "originalKey"]?.S === key) return NextResponse.json({ ok: true });
     const reserveSk = mediaType === "PHOTO" ? `RESERVE#PHOTO#${mediaId}` : `RESERVE#${mediaId}`;
     const reservationKey = { email: { S: user.email }, sk: { S: reserveSk } };
@@ -31,8 +41,13 @@ export async function POST(request: Request) {
     if (!result.Item) return NextResponse.json({ error: "Upload reservation not found" }, { status: 409 });
     const reserve = unmarshall(result.Item);
     if (reserve.key !== key || !Number.isSafeInteger(reserve.size) || reserve.size <= 0) return NextResponse.json({ error: "Reservation mismatch" }, { status: 409 });
+    if (!live && reserve.backupHash && reserve.backupHash !== body.contentHash) return NextResponse.json({ error: "Content hash mismatch" }, { status: 409 });
     const head = await s3.send(new HeadObjectCommand({ Bucket: body.bucket, Key: key }));
     if (head.ContentLength !== reserve.size || head.Metadata?.["owner-sub"] !== user.sub) return NextResponse.json({ error: "Uploaded object mismatch" }, { status: 409 });
+    if (!live) {
+      const duplicate = await finalizeConcurrentDuplicate(user.email, user.sub, key, body.contentHash);
+      if (duplicate) return NextResponse.json({ ok: true, duplicate: true, photoId: duplicate });
+    }
     const now = new Date().toISOString();
     const timeline = buildMediaTimelineFields({ email: user.email, mediaType, mediaId, fileLastModified: body.fileLastModified, createdAt: now, fallbackNow: now });
     const fields: Record<string, AttributeValue> = {
@@ -49,16 +64,22 @@ export async function POST(request: Request) {
     const sets = Object.entries(fields).map(([name,value],i) => { names[`#f${i}`]=name; values[`:v${i}`]=value; return `#f${i} = :v${i}`; });
     sets.push("createdAt = if_not_exists(createdAt, :now)", "mediaAt = if_not_exists(mediaAt, :mediaAt)", "mediaAtSource = if_not_exists(mediaAtSource, :source)", "timelinePk = if_not_exists(timelinePk, :pk)", "timelineSk = if_not_exists(timelineSk, :ts)");
     const counterNames = { "#bytes": mediaType === "PHOTO" ? "photoBytes" : "videoBytes", ...(!live ? { "#count": mediaType === "PHOTO" ? "photoCount" : "videosCount" } : {}) };
-    const counterValues: Record<string,AttributeValue> = { ":size": { N: String(reserve.size) }, ":negative": { N: String(-reserve.size) }, ":active": { S: "ACTIVE" }, ...(!live ? { ":one": { N: "1" } } : {}) };
+    const counterValues: Record<string,AttributeValue> = { ":size": { N: String(reserve.size) }, ":negative": { N: String(-reserve.size) }, ":active": { S: "ACTIVE" }, ":subject": { S: user.sub }, ...(!live ? { ":one": { N: "1" } } : {}) };
     await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
+      ...(reserve.uploadSource === "automatic" ? [suppressionCheck(user.email, mediaType, String(reserve.backupHash))] : []),
       { Delete: { TableName: table, Key: reservationKey, ConditionExpression: "#key = :key", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: key } } } },
       { Update: { TableName: table, Key: dbKey, UpdateExpression: `SET ${sets.join(", ")}`, ConditionExpression: "attribute_not_exists(#marker) AND (attribute_not_exists(#erasure) OR (#erasure <> :erasing AND #erasure <> :erased))", ExpressionAttributeNames: names, ExpressionAttributeValues: values } },
-      { Update: { TableName: table, Key: { email: { S: user.email }, sk: { S: "PROFILE" } }, UpdateExpression: `ADD usedBytes :size, #bytes :size, reservedBytes :negative${live ? "" : ", #count :one"}`, ConditionExpression: "attribute_exists(sk) AND reservedBytes >= :size AND (attribute_not_exists(accountStatus) OR accountStatus = :active)", ExpressionAttributeNames: counterNames, ExpressionAttributeValues: counterValues } },
+      { Update: { TableName: table, Key: { email: { S: user.email }, sk: { S: "PROFILE" } }, UpdateExpression: `ADD usedBytes :size, #bytes :size, reservedBytes :negative${live ? "" : ", #count :one"}`, ConditionExpression: "attribute_exists(sk) AND reservedBytes >= :size AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :subject)", ExpressionAttributeNames: counterNames, ExpressionAttributeValues: counterValues } },
       ...(!live ? [{ Put: { TableName: table, Item: { email: { S: user.email }, sk: { S: `${mediaType === "PHOTO" ? "HASH#PHOTO#" : "HASH#"}${body.contentHash}` }, mediaId: { S: mediaId }, type: { S: mediaType } }, ConditionExpression: "attribute_not_exists(sk) OR mediaId = :id", ExpressionAttributeValues: { ":id": { S: mediaId } } } }] : []),
     ] }));
     return NextResponse.json({ ok: true });
   } catch (error) {
     const conflict = error instanceof Error && error.name === "TransactionCanceledException";
-    return NextResponse.json({ error: conflict ? "Upload finalization conflict. Retry safely." : "Upload finalization failed" }, { status: conflict ? 409 : 500 });
+    if (conflict && uploadKey) {
+      const duplicate = await finalizeConcurrentDuplicate(user.email, user.sub, uploadKey, uploadHash);
+      if (duplicate) return NextResponse.json({ ok: true, duplicate: true, photoId: duplicate });
+    }
+    if (conflict && uploadKey && await rejectDeletedBackup(user.email, user.sub, uploadKey)) return NextResponse.json({ error: "Cloud copy was deleted", code: "CLOUD_DELETED" }, { status: 410 });
+    return NextResponse.json({ error: conflict ? "Upload finalization conflict. Retry safely." : "Upload finalization failed", ...(conflict ? { code: "UPLOAD_IN_PROGRESS" } : {}) }, { status: conflict ? 409 : 500 });
   }
 }

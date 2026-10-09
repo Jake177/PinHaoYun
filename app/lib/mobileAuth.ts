@@ -82,6 +82,7 @@ export async function mobileAuth(operation: string, body: Record<string, unknown
       return tokenResponse(result.AuthenticationResult || {}, refreshToken);
     }
     case "sign-up": {
+      if (process.env.PH_API_ONLY === "true" && !(process.env.MOBILE_TEST_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).includes(email)) throw new Error("Invalid test registration email");
       requireConsent(body);
       const profile = await ddb.send(new GetItemCommand({ TableName: table(), Key: profileKey(email), ConsistentRead: true }));
       if (profile.Item?.accountStatus?.S === "DELETING") throw new Error("Account deletion is in progress");
