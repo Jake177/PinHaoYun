@@ -1,4 +1,4 @@
-export const POLICY_VERSION = "2026-10-08-beta-1";
+export const POLICY_VERSION = "2026-10-09-beta-2";
 
 const reading = {
   "terms": {
@@ -15,7 +15,7 @@ const reading = {
         },
         {
           "title": "Camera backup",
-          "text": "Camera backup is optional and iOS controls background execution."
+          "text": "Camera backup is off by default. When you enable it, the app scans the Photos library you authorize and uploads originals according to your selected scope, video, network and local-time settings. Live Photos include their motion resource. iOS controls background execution; exact times and completion after force quitting are not guaranteed."
         },
         {
           "title": "Account deletion",
@@ -40,7 +40,7 @@ const reading = {
         },
         {
           "title": "自动备份",
-          "text": "自动相册备份由你主动开启，后台执行受 iOS 控制。"
+          "text": "自动相册备份默认关闭。你开启后，App 扫描获准访问的相册，并按你选择的范围、视频、网络及当地时间设置上传原件；实况照片包含动态资源。后台执行受 iOS 控制，无法保证准点运行或强制关闭后继续完成。"
         },
         {
           "title": "账号注销",
@@ -74,6 +74,10 @@ const reading = {
           "text": "You may retrieve your originals or request account deletion in the app. Account-associated cloud data is erased within 30 days; your local Photos library is unaffected."
         },
         {
+          "title": "Backup records and optional diagnostics",
+          "text": "Backup settings and progress are stored on this device for each account and environment. After individual cloud deletion, minimal deletion records and content fingerprints remain until account erasure to prevent automatic reuploads; explicit manual uploads remain available. Local diagnostics retain up to 30 daily summaries and 500 state events, containing times, network state and counts, without photo contents, filenames or login credentials. They are shared only when you choose to export them and are removed when account erasure is accepted."
+        },
+        {
           "title": "Testing draft",
           "text": "This is a testing draft, pending operator/contact details and a review of the actual retention and distribution arrangements."
         }
@@ -97,6 +101,10 @@ const reading = {
         {
           "title": "原件与账号注销",
           "text": "你可下载原件，也可在 App 内申请注销。账号关联的云端资料在 30 天内删除，手机相册不受影响。"
+        },
+        {
+          "title": "备份记录与可选诊断",
+          "text": "备份设置与进度按账号及环境保存在本机。单项云端删除后，保留最小删除记录与内容指纹至账号注销，以阻止自动回传；你仍可手动上传。本地诊断最多保留 30 天的每日摘要和 500 条状态事件，记录时间、网络状态及数量，不含照片内容、文件名或登录凭据；仅在你主动导出时分享，账号注销获受理后清除。"
         },
         {
           "title": "测试草案",

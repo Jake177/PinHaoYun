@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { S3Client, CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
 import { getSessionUser } from "@/app/lib/sessionUser";
+import { rejectDeletedBackup } from "@/app/lib/backupDeletion";
 
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
@@ -56,6 +57,8 @@ export async function POST(request: Request) {
       }))
       .filter((part) => part.PartNumber && part.ETag)
       .sort((a, b) => (a.PartNumber as number) - (b.PartNumber as number));
+
+    if (await rejectDeletedBackup(normalizedUser, user.sub, key)) return NextResponse.json({ error: "Cloud copy was deleted", code: "CLOUD_DELETED" }, { status: 410 });
 
     if (sortedParts.length === 0) {
       return NextResponse.json(

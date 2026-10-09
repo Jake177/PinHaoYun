@@ -1,4 +1,4 @@
-const { canProcess, protectMediaWrites, verifiedUserSub } = require("./accountGuard");
+const { canProcess, protectMediaWrites, verifiedUserSub, cleanupRejectedObjects } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract video metadata with ffprobe and update DynamoDB.
 // Requires ffprobe in a Lambda layer (default path: /opt/bin/ffprobe).
@@ -340,13 +340,13 @@ exports.handler = async (event) => {
 
       if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
       const tmpPath = await downloadToTmp(bucket, decodedKey);
+      let thumbResult = null;
       try {
         const probe = await runFfprobe(tmpPath);
         // Log tags for troubleshooting missing metadata (redact to avoid huge output)
 
 
         const metadata = extractMetadata(probe);
-        let thumbResult = null;
         try {
           thumbResult = await makeThumbnail({
             bucket,
@@ -375,6 +375,7 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, thumbResult ? [{ Bucket: thumbResult.bucket, Key: thumbResult.key }] : []);
       }
     } catch (error) {
       console.error("Failed to process record", error);

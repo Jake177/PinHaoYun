@@ -1,4 +1,4 @@
-const { canProcess, protectMediaWrites, verifiedUserSub } = require("./accountGuard");
+const { canProcess, protectMediaWrites, verifiedUserSub, cleanupRejectedObjects } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract photo metadata and create thumbnails with ImageMagick.
 
@@ -627,6 +627,7 @@ exports.handler = async (event) => {
       }
 
       const { tmpPath, contentType } = await downloadToTmp(bucket, decodedKey);
+      let thumbResult = null;
       try {
         let metadata = {};
         try {
@@ -634,7 +635,6 @@ exports.handler = async (event) => {
         } catch (error) {
           console.warn("Failed to extract photo metadata", error);
         }
-        let thumbResult = null;
         try {
           thumbResult = await makeThumbnail({
             filePath: tmpPath,
@@ -731,6 +731,7 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, thumbResult ? [{ Bucket: thumbResult.bucket, Key: thumbResult.key }] : []);
       }
     } catch (error) {
       console.error("Failed to process photo record", error);
