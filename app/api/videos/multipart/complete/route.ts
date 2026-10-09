@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { S3Client, CompleteMultipartUploadCommand } from "@aws-sdk/client-s3";
-import { decodeIdToken } from "@/app/lib/jwt";
+import { getSessionUser } from "@/app/lib/sessionUser";
 
 const originalBucket = process.env.S3_ORIGINAL_BUCKET;
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
@@ -17,13 +16,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const cookieStore = await cookies();
-    const token = cookieStore.get("id_token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(token) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
     const userId =
       (payload.email as string) ||
       (payload["cognito:username"] as string) ||

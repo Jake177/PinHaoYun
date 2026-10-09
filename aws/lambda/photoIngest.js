@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites, verifiedUserSub } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract photo metadata and create thumbnails with ImageMagick.
 
@@ -17,7 +18,7 @@ const { buildMediaTimelineFields } = require("./timeline");
 const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
+const ddb = protectMediaWrites(new DynamoDBClient({}));
 const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
@@ -493,17 +494,6 @@ const extractMetadata = async (filePath) => {
     captureAlt: captureAltCandidate,
     orientation: orientationCandidate,
   };
-  console.log("photo metadata sample", {
-    width: result.width,
-    height: result.height,
-    captureTime: result.captureTime,
-    deviceMake: result.deviceMake,
-    deviceModel: result.deviceModel,
-    deviceSoftware: result.deviceSoftware,
-    captureLat: result.captureLat,
-    captureLon: result.captureLon,
-    orientation: result.orientation,
-  });
   return result;
 };
 
@@ -554,6 +544,7 @@ const enqueueLocationEnrichment = async ({ email, photoId, lat, lon }) => {
         QueueUrl: LOCATION_ENRICH_QUEUE_URL,
         MessageBody: JSON.stringify({
           email,
+          userSub: verifiedUserSub(email),
           videoId: photoId,
           mediaType: "PHOTO",
           lat,
@@ -598,6 +589,7 @@ exports.handler = async (event) => {
       const fileName = parts[parts.length - 1];
       const photoId = fileName.split("_")[0];
       if (!userId || !photoId) continue;
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
 
       const isLiveVideo = fileName.includes("_live.") || fileName.toLowerCase().endsWith(".mov");
       const now = new Date().toISOString();

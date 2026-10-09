@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import crypto from "node:crypto";
 import { DynamoDBClient, GetItemCommand } from "@aws-sdk/client-dynamodb";
-import { decodeIdToken } from "@/app/lib/jwt";
+import { getSessionUser } from "@/app/lib/sessionUser";
 import { normaliseContentType } from "@/app/lib/contentType";
 
 const MAX_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
@@ -43,13 +42,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const cookieStore = await cookies();
-    const token = cookieStore.get("id_token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(token) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
     const userId =
       (payload.email as string) ||
       (payload["cognito:username"] as string) ||
@@ -139,6 +134,7 @@ export async function POST(request: Request) {
       ContentType: resolvedContentType,
       ContentLength: size,
       StorageClass: "INTELLIGENT_TIERING",
+        Metadata: { "owner-sub": user.sub },
     });
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 900 });

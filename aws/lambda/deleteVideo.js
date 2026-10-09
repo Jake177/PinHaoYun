@@ -1,153 +1,52 @@
 "use strict";
-
+const { DynamoDBClient, GetItemCommand, TransactWriteItemsCommand } = require("@aws-sdk/client-dynamodb");
 const { S3Client, DeleteObjectCommand } = require("@aws-sdk/client-s3");
-const {
-  DynamoDBClient,
-  GetItemCommand,
-  TransactWriteItemsCommand,
-} = require("@aws-sdk/client-dynamodb");
 const { unmarshall } = require("@aws-sdk/util-dynamodb");
-
-const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
-
-const TABLE_NAME = process.env.VIDEOS_TABLE;
-const DEFAULT_ORIGINAL_BUCKET = process.env.S3_ORIGINAL_BUCKET;
-const DEFAULT_THUMBNAIL_BUCKET = process.env.S3_THUMBNAIL_BUCKET;
-
-const safeNumber = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
-
-exports.handler = async (event) => {
-  if (!TABLE_NAME) throw new Error("Missing env VIDEOS_TABLE");
-  const records = event.Records || [];
-
-  for (const record of records) {
-    try {
-      const body = record.body ? JSON.parse(record.body) : {};
-      const email = body.email ? String(body.email).toLowerCase() : "";
-      const rawType = body.mediaType || body.type;
-      const mediaType =
-        rawType === "PHOTO" || body.photoId ? "PHOTO" : "VIDEO";
-      const mediaId = body.mediaId || body.videoId || body.photoId || "";
-
-      if (!email || !mediaId) {
-        console.warn("Skipping delete request with missing info", body);
-        continue;
-      }
-
-      const sk = `${mediaType}#${mediaId}`;
-      const res = await ddb.send(
-        new GetItemCommand({
-          TableName: TABLE_NAME,
-          Key: {
-            email: { S: email },
-            sk: { S: sk },
-          },
-        }),
-      );
-
-      if (!res.Item) {
-        console.warn("Media record not found, skipping", { email, mediaId, mediaType });
-        continue;
-      }
-
-      const item = unmarshall(res.Item);
-      const originalBucket = item.originalBucket || DEFAULT_ORIGINAL_BUCKET;
-      const originalKey = item.originalKey;
-      const thumbnailBucket = item.thumbnailBucket || DEFAULT_THUMBNAIL_BUCKET;
-      const thumbnailKey = item.thumbnailKey;
-      const liveVideoBucket = item.liveVideoBucket || originalBucket || DEFAULT_ORIGINAL_BUCKET;
-      const liveVideoKey = item.liveVideoKey;
-      const contentHash = item.contentHash;
-      const size = safeNumber(item.size);
-      const liveVideoSize = safeNumber(item.liveVideoSize);
-      const totalSize = size + liveVideoSize;
-
-      if (originalBucket && originalKey) {
-        await s3.send(
-          new DeleteObjectCommand({
-            Bucket: originalBucket,
-            Key: originalKey,
-          }),
-        );
-      }
-
-      if (thumbnailBucket && thumbnailKey) {
-        await s3.send(
-          new DeleteObjectCommand({
-            Bucket: thumbnailBucket,
-            Key: thumbnailKey,
-          }),
-        );
-      }
-
-      if (mediaType === "PHOTO" && liveVideoBucket && liveVideoKey) {
-        await s3.send(
-          new DeleteObjectCommand({
-            Bucket: liveVideoBucket,
-            Key: liveVideoKey,
-          }),
-        );
-      }
-
-      const now = new Date().toISOString();
-      const countField = mediaType === "PHOTO" ? "photoCount" : "videosCount";
-      const bytesField = mediaType === "PHOTO" ? "photoBytes" : "videoBytes";
-      const transactItems = [
-        {
-          Delete: {
-            TableName: TABLE_NAME,
-            Key: { email: { S: email }, sk: { S: sk } },
-            ConditionExpression: "attribute_exists(sk)",
-          },
-        },
-        {
-          Update: {
-            TableName: TABLE_NAME,
-            Key: { email: { S: email }, sk: { S: "PROFILE" } },
-            UpdateExpression:
-              "SET updatedAt = :now ADD usedBytes :negSize, #bytesField :negSize, #count :negOne",
-            ExpressionAttributeNames: {
-              "#count": countField,
-              "#bytesField": bytesField,
-            },
-            ExpressionAttributeValues: {
-              ":now": { S: now },
-              ":negSize": { N: String(-totalSize) },
-              ":negOne": { N: "-1" },
-            },
-          },
-        },
-      ];
-
-      if (contentHash) {
-        const hashKey =
-          mediaType === "PHOTO" ? `HASH#PHOTO#${contentHash}` : `HASH#${contentHash}`;
-        transactItems.splice(1, 0, {
-          Delete: {
-            TableName: TABLE_NAME,
-            Key: { email: { S: email }, sk: { S: hashKey } },
-          },
-        });
-      }
-
-      try {
-        await ddb.send(
-          new TransactWriteItemsCommand({
-            TransactItems: transactItems,
-          }),
-        );
-      } catch (err) {
-        if (err?.name === "TransactionCanceledException") {
-          console.warn("Delete transaction canceled", err);
-        } else {
-          throw err;
-        }
-      }
-    } catch (error) {
-      console.error("Failed to process delete record", error);
+const ddb = new DynamoDBClient({}); const s3 = new S3Client({});
+const table = process.env.VIDEOS_TABLE;
+const number = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+async function remove(body, sentAt) {
+  const email = String(body.email || "").toLowerCase();
+  const type = body.mediaType === "PHOTO" || body.photoId ? "PHOTO" : "VIDEO";
+  const id = body.mediaId || body.photoId || body.videoId;
+  if (!email || !id) return;
+  const Key = { email: { S: email }, sk: { S: `${type}#${id}` } };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [record, account] = await Promise.all([
+      ddb.send(new GetItemCommand({ TableName: table, Key, ConsistentRead: true })),
+      ddb.send(new GetItemCommand({ TableName: table, Key: { email: { S: email }, sk: { S: "PROFILE" } }, ConsistentRead: true })),
+    ]);
+    if (!record.Item || record.Item.status?.S === "DELETED" || !account.Item) return;
+    const item = unmarshall(record.Item), profile = unmarshall(account.Item);
+    if (profile.accountStatus && profile.accountStatus !== "ACTIVE") return;
+    if (body.userSub && profile.userSub && body.userSub !== profile.userSub) return;
+    if (sentAt && sentAt < Date.parse(profile.createdAt || "1970-01-01")) return;
+    const reserveKey = { email: { S: email }, sk: { S: type === "PHOTO" ? `RESERVE#PHOTO#${id}` : `RESERVE#${id}` } };
+    const reservation = await ddb.send(new GetItemCommand({ TableName: table, Key: reserveKey, ConsistentRead: true }));
+    const pending = reservation.Item ? unmarshall(reservation.Item) : null;
+    const staticCharged = item.uploadConfirmed === true || (item.uploadConfirmed === undefined && (!pending || pending.mediaRole === "liveVideo"));
+    const liveCharged = item.liveUploadConfirmed === true || (item.liveUploadConfirmed === undefined && item.liveVideoKey && (!pending || pending.mediaRole !== "liveVideo"));
+    const bytes = (staticCharged ? number(item.size) : 0) + (liveCharged ? number(item.liveVideoSize) : 0);
+    const allowed = [process.env.S3_ORIGINAL_BUCKET, process.env.S3_THUMBNAIL_BUCKET, process.env.S3_PROFILE_BUCKET].filter(Boolean);
+    for (const [key,bucket] of [[item.originalKey,item.originalBucket || process.env.S3_ORIGINAL_BUCKET],[item.originalPhotoKey,item.originalPhotoBucket || process.env.S3_ORIGINAL_BUCKET],[item.thumbnailKey,item.thumbnailBucket || process.env.S3_THUMBNAIL_BUCKET],[item.liveVideoKey,item.liveVideoBucket || process.env.S3_ORIGINAL_BUCKET]]) {
+      if (key && allowed.includes(bucket)) await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     }
+    const countField = type === "PHOTO" ? "photoCount" : "videosCount";
+    const bytesField = type === "PHOTO" ? "photoBytes" : "videoBytes";
+    const updates = [
+      // A minimal tombstone stops delayed ingesters from resurrecting this ID.
+      // It is removed with all other partition data during account erasure.
+      { Put: { TableName: table, Item: { ...Key, status: { S: "DELETED" } }, ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(#state) OR #state <> :deleted)", ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":deleted": { S: "DELETED" } } } },
+      { Update: { TableName: table, Key: { email: { S: email }, sk: { S: "PROFILE" } }, UpdateExpression: "SET usedBytes = :used, #bytes = :bytes, #count = :count, reservedBytes = :reserved", ConditionExpression: "usedBytes = :before AND (reservedBytes = :reserveBefore OR attribute_not_exists(reservedBytes)) AND (attribute_not_exists(accountStatus) OR accountStatus = :active)", ExpressionAttributeNames: { "#bytes": bytesField, "#count": countField }, ExpressionAttributeValues: { ":used": { N: String(Math.max(0,number(profile.usedBytes)-bytes)) }, ":bytes": { N: String(Math.max(0,number(profile[bytesField])-bytes)) }, ":count": { N: String(Math.max(0,number(profile[countField])-(staticCharged?1:0))) }, ":reserved": { N: String(Math.max(0,number(profile.reservedBytes)-number(pending?.size))) }, ":before": { N: String(number(profile.usedBytes)) }, ":reserveBefore": { N: String(number(profile.reservedBytes)) }, ":active": { S: "ACTIVE" } } } },
+    ];
+    if (pending) updates.push({ Delete: { TableName: table, Key: reserveKey, ConditionExpression: "attribute_exists(sk)" } });
+    if (item.contentHash) updates.push({ Delete: { TableName: table, Key: { email: { S: email }, sk: { S: `${type === "PHOTO" ? "HASH#PHOTO#" : "HASH#"}${item.contentHash}` } } } });
+    try { await ddb.send(new TransactWriteItemsCommand({ TransactItems: updates })); return; }
+    catch (error) { if (error.name !== "TransactionCanceledException") throw error; }
   }
-
+  throw new Error("Deletion accounting conflict; retry required");
+}
+exports.handler = async event => {
+  for (const record of event.Records || []) await remove(JSON.parse(record.body || "{}"), Number(record.attributes?.SentTimestamp) || 0);
   return { ok: true };
 };

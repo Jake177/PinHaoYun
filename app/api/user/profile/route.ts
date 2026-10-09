@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import {
   DynamoDBClient,
   GetItemCommand,
@@ -19,7 +18,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import { decodeIdToken } from "@/app/lib/jwt";
+import { getSessionUser } from "@/app/lib/sessionUser";
 import { resolveProfileBillingState } from "@/app/lib/profileBilling";
 import { DEFAULT_PLAN_CODE, getPlanQuotaBytes } from "@/app/lib/plans";
 
@@ -76,15 +75,10 @@ const signGetUrl = async (
 // GET: Fetch user profile (Cognito attributes + DynamoDB stats + profile extras)
 export async function GET() {
   try {
-    const cookieStore = await cookies();
-    const idToken = cookieStore.get("id_token")?.value;
-    const accessToken = cookieStore.get("access_token")?.value;
-
-    if (!idToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(idToken) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
+    const accessToken = user.accessToken;
     const email = (payload.email as string)?.toLowerCase();
 
     if (!email) {
@@ -184,15 +178,11 @@ export async function GET() {
 // PUT: Update profile basics + optional bio + optional signature
 export async function PUT(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const accessToken = cookieStore.get("access_token")?.value;
-    const idToken = cookieStore.get("id_token")?.value;
-
-    if (!accessToken || !idToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(idToken) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
+    const accessToken = user.accessToken;
+    if (!accessToken) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const email =
       ((payload.email as string) ||
         (payload["cognito:username"] as string) ||

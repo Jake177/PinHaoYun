@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from "jose";
+import { createRemoteJWKSet, decodeJwt, jwtVerify, type JWTPayload } from "jose";
 
 const userPoolId = process.env.COGNITO_USER_POOL_ID || process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
 const clientId = process.env.COGNITO_CLIENT_ID || process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
@@ -22,11 +22,18 @@ const JWKS = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
 export async function verifyIdToken(idToken: string) {
   const { payload } = await jwtVerify(idToken, JWKS, {
     issuer,
-    audience: clientId,
+    audience: [clientId!, process.env.COGNITO_MOBILE_CLIENT_ID].filter(Boolean) as string[],
+    algorithms: ["RS256"],
   });
+  if (payload.token_use !== "id" || !payload.sub || typeof payload.email !== "string" || payload.email_verified !== true) throw new Error("Invalid identity token");
   return payload;
 }
 
-export function decodeIdToken(idToken: string) {
-  return decodeJwt(idToken);
+export async function verifyAccessToken(accessToken: string, identity: JWTPayload) {
+  const { payload } = await jwtVerify(accessToken, JWKS, { issuer, algorithms: ["RS256"] });
+  if (payload.token_use !== "access" || payload.sub !== identity.sub || payload.client_id !== identity.aud) throw new Error("Access token identity mismatch");
+  return payload;
 }
+
+// Display-only legacy Web labels. API authorization must use getSessionUser.
+export function decodeIdToken(token: string) { return decodeJwt(token); }
