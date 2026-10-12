@@ -13,6 +13,6 @@ Reference: [Cognito post-confirmation trigger](https://docs.aws.amazon.com/cogni
 - Updated only the `pinhaoyun-ios-dev-postConfirmation` Lambda code in `ap-southeast-2`. The isolated API container and production resources were not deployed.
 - Invoked the deployed reset callback against an existing, confirmed disposable QA account. It returned HTTP 200 without a function error and returned its event unchanged. A consistent DynamoDB read before and after had an identical canonical profile digest, including counters and plan fields.
 - Deployed ZIP SHA-256 (base64): `NzSZHZfckSWdGAeQm6JBGDVgugjx0joNbUoegZKD4z4=`.
-- The real-device email-code → save → sign-in check remains pending tester confirmation. A direct trigger invocation does not establish that full flow.
+- On 12 October 2026, the tester confirmed that password reset and subsequent sign-in succeeded on their physical iPhone (manual tester report).
 
 The code hotfix used a new versioned development artifact and a guarded single-function update. The next complete deployment through the iOS repository's `scripts/deploy-staging.mjs` must package this fixed source; it will replace the hotfix artifact reference through CloudFormation. Local deployment/proof records are kept in ignored `build/password-reset/` files in the iOS workspace.
