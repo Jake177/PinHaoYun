@@ -5,6 +5,8 @@ const client = new DynamoDBClient({});
 const freePlan = planData.plans.FREE;
 
 exports.handler = async (event) => {
+  // Cognito also calls this trigger after password reset; account data already exists.
+  if (event.triggerSource === "PostConfirmation_ConfirmForgotPassword") return event;
   const tableName = process.env.VIDEOS_TABLE || process.env.USERS_TABLE;
   if (!tableName) throw new Error("Missing env VIDEOS_TABLE/USERS_TABLE");
   const attributes = event.request?.userAttributes || {};
