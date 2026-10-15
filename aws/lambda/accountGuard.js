@@ -26,7 +26,7 @@ exports.canProcess = async (email, object, eventSub) => {
       const filename = object.Key.split("/").pop();
       const id = mediaType === "PHOTO" ? filename.split("_")[0] : filename;
       const media = await ddb.send(new GetItemCommand({ TableName: process.env.VIDEOS_TABLE, Key: { email: { S: email.toLowerCase() }, sk: { S: `${mediaType}#${id}` } }, ConsistentRead: true }));
-      if (["DELETING", "DELETED"].includes(media.Item?.status?.S || "")) allowed = false;
+      if (["DELETING", "DELETED"].includes(media.Item?.status?.S || "") || media.Item?.rejectedUploadKey?.S === object.Key) allowed = false;
       const live = mediaType === "PHOTO" && filename.toLowerCase().endsWith(".mov");
       const currentKey = media.Item?.[live ? "liveVideoKey" : (mediaType === "PHOTO" ? "originalPhotoKey" : "originalKey")]?.S || media.Item?.originalKey?.S;
       confirmed = media.Item?.[live ? "liveUploadConfirmed" : "uploadConfirmed"]?.BOOL === true && currentKey === object.Key && (!backupHash || media.Item?.contentHash?.S === backupHash);
@@ -34,7 +34,7 @@ exports.canProcess = async (email, object, eventSub) => {
       if (allowed && requestId && !confirmed) {
         lease = { email: { S: email.toLowerCase() }, sk: { S: mediaType === "PHOTO" ? `RESERVE#PHOTO#${id}` : `RESERVE#${id}` } };
         const reservation = await ddb.send(new GetItemCommand({ TableName: process.env.VIDEOS_TABLE, Key: lease, ConsistentRead: true }));
-        if (reservation.Item?.key?.S !== object.Key || reservation.Item?.requestId?.S !== requestId) allowed = false;
+        if (reservation.Item?.key?.S !== object.Key || reservation.Item?.requestId?.S !== requestId || reservation.Item?.cleanupPending?.BOOL) allowed = false;
       }
     }
     if (automatic && allowed && !confirmed) {
@@ -70,13 +70,17 @@ exports.protectMediaWrites = (client, requireExisting = false) => {
       const email = input.Key.email?.S?.toLowerCase();
       if (!verifiedActor || verifiedActor.email !== email) throw new Error("Media write requires a verified account");
       const actor = verifiedActor;
+      if (actor.object) {
+        input.ConditionExpression += " AND (attribute_not_exists(rejectedUploadKey) OR rejectedUploadKey <> :processingKey)";
+        input.ExpressionAttributeValues[":processingKey"] = { S: actor.object.Key };
+      }
       if (actor.backupHash && !input.UpdateExpression.includes("contentHash")) {
         input.UpdateExpression += ", contentHash = if_not_exists(contentHash, :backupHash)";
         input.ExpressionAttributeValues[":backupHash"] = { S: actor.backupHash };
       }
       const subjectGate = actor.userSub ? "userSub = :subject" : "(attribute_not_exists(requiresOwnerMetadata) OR requiresOwnerMetadata = :legacy)";
       const transaction = current => new TransactWriteItemsCommand({ TransactItems: [
-        ...(current.lease ? [{ ConditionCheck: { TableName: input.TableName, Key: current.lease, ConditionExpression: "#key = :key AND requestId = :request", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: current.object.Key }, ":request": { S: current.requestId } } } }] : []),
+        ...(current.lease ? [{ ConditionCheck: { TableName: input.TableName, Key: current.lease, ConditionExpression: "#key = :key AND requestId = :request AND attribute_not_exists(cleanupPending)", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: current.object.Key }, ":request": { S: current.requestId } } } }] : []),
         ...(current.automatic ? [{ ConditionCheck: { TableName: input.TableName, Key: { email: { S: email }, sk: { S: `BACKUP_DELETED#${current.mediaType}#${current.backupHash}` } }, ConditionExpression: "attribute_not_exists(sk)" } }] : []),
         { ConditionCheck: {
           TableName: input.TableName, Key: { email: { S: email }, sk: { S: "PROFILE" } },

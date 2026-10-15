@@ -614,15 +614,19 @@ exports.handler = async (event) => {
           updateParts.splice(2, 0, "liveVideoSize = :liveSize");
           values[":liveSize"] = { N: String(liveVideoSize) };
         }
-        await ddb.send(
-          new UpdateItemCommand({
-            TableName: TABLE_NAME,
-            Key: { email: { S: userId }, sk: { S: `PHOTO#${photoId}` } },
-            UpdateExpression: `SET ${updateParts.join(", ")}`,
-            ExpressionAttributeNames: names,
-            ExpressionAttributeValues: values,
-          }),
-        );
+        try {
+          await ddb.send(
+            new UpdateItemCommand({
+              TableName: TABLE_NAME,
+              Key: { email: { S: userId }, sk: { S: `PHOTO#${photoId}` } },
+              UpdateExpression: `SET ${updateParts.join(", ")}`,
+              ExpressionAttributeNames: names,
+              ExpressionAttributeValues: values,
+            }),
+          );
+        } finally {
+          await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey });
+        }
         continue;
       }
 
@@ -735,6 +739,8 @@ exports.handler = async (event) => {
       }
     } catch (error) {
       console.error("Failed to process photo record", error);
+      // Preserve S3/Lambda retry behavior when a write or rejection cleanup fails.
+      throw error;
     }
   }
 

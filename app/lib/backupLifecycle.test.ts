@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { rejectDeletedBackup, suppressionKey } from "./backupDeletion";
+import { discardUnconfirmedUpload, rejectDeletedBackup, suppressionKey } from "./backupDeletion";
 const load = createRequire(import.meta.url);
 const db = load("@aws-sdk/client-dynamodb");
 const storage = load("@aws-sdk/client-s3");
@@ -83,6 +83,21 @@ describe("automatic backup deletion", () => {
     const send = vi.fn(async (_command: { input: unknown }) => ({}));
     await guard.protectMediaWrites({ send }).send(update());
     expect(send.mock.calls[0][0].input).toMatchObject({ TransactItems: [{ ConditionCheck: { Key: { sk: { S: "RESERVE#PHOTO#asset" } }, ExpressionAttributeValues: { ":request": { S: nonce } } } }, {}, {}, {}] });
+    expect((send.mock.calls[0][0].input as any).TransactItems[0].ConditionCheck.ConditionExpression).toContain("attribute_not_exists(cleanupPending)");
+  });
+  it("rejects a cleaning lease and prevents cancellation from dropping its durable references", async () => {
+    nonce = "fixture-nonce";
+    reservation = { key: { S: object.Key }, requestId: { S: nonce }, uploadId: { S: "upload" }, cleanupPending: { BOOL: true } };
+    expect(await guard.canProcess(email, object)).toBe(false);
+    expect(await discardUnconfirmedUpload(email, subject, object.Key, "upload")).toBe(false);
+    expect(transactions).toHaveLength(0);
+  });
+  it("rejects a cleaned Live Photo movie without blocking its confirmed still image", async () => {
+    source = "manual";
+    const live = { Bucket: object.Bucket, Key: `photo/${email}/asset_live.mov` };
+    media = { status: { S: "READY" }, rejectedUploadKey: { S: live.Key }, uploadConfirmed: { BOOL: true }, originalPhotoKey: { S: object.Key }, contentHash: { S: hash } };
+    expect(await guard.canProcess(email, live)).toBe(false);
+    expect(await guard.canProcess(email, object)).toBe(true);
   });
   it("does not write metadata after its reservation is cancelled", async () => {
     nonce = "fixture-nonce"; reservation = { key: { S: object.Key }, requestId: { S: nonce } };

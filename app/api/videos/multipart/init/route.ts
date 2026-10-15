@@ -185,7 +185,7 @@ export async function POST(request: Request) {
       const r = previous.Item;
       const keyMatches = r.key?.S === key || (isLiveVideo && !r.requestId?.S && r.key?.S === `${keyPrefix}/${normalizedUser}/${id}_live.${ext || "mov"}`);
       const matches = keyMatches && Number(r.size?.N) === sizeNumber && (!r.backupHash?.S || r.backupHash.S === backupHash) && (!r.ownerSub?.S || r.ownerSub.S === user.sub) && (r.uploadSource?.S || "manual") === (automatic ? "automatic" : "manual");
-      if (matches) return NextResponse.json({ duplicate: false, resumed: true, key: r.key?.S, bucket: originalBucket, uploadId: r.uploadId?.S, photoId: isPhoto ? mediaId : undefined });
+      if (matches && !r.cleanupPending?.BOOL) return NextResponse.json({ duplicate: false, resumed: true, key: r.key?.S, bucket: originalBucket, uploadId: r.uploadId?.S, photoId: isPhoto ? mediaId : undefined });
       return NextResponse.json({ error: "Another transfer is updating this item. Try again shortly.", code: "UPLOAD_IN_PROGRESS" }, { status: 409 });
     }
     if (!isLiveVideo) {
@@ -267,6 +267,12 @@ export async function POST(request: Request) {
           new TransactWriteItemsCommand({
             TransactItems: [
               ...(automatic ? [suppressionCheck(normalizedUser, mediaType, backupHash!)] : []),
+              ...(isLiveVideo ? [{ Update: {
+                TableName: tableName, Key: { email: { S: normalizedUser }, sk: { S: `PHOTO#${mediaId}` } },
+                UpdateExpression: "REMOVE rejectedUploadKey",
+                ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(liveUploadConfirmed) OR liveUploadConfirmed = :no) AND (attribute_not_exists(#state) OR (#state <> :deleting AND #state <> :deleted))",
+                ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":no": { BOOL: false }, ":deleting": { S: "DELETING" }, ":deleted": { S: "DELETED" } },
+              } }] : []),
               {
                 Update: {
                   TableName: tableName,

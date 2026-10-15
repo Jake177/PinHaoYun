@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     const result = await ddb.send(new GetItemCommand({ TableName: table, Key: reservationKey, ConsistentRead: true }));
     if (!result.Item) return NextResponse.json({ error: "Upload reservation not found" }, { status: 409 });
     const reserve = unmarshall(result.Item);
+    if (reserve.cleanupPending) return NextResponse.json({ error: "Upload cleanup in progress", code: "UPLOAD_IN_PROGRESS" }, { status: 409 });
     if (reserve.key !== key || !Number.isSafeInteger(reserve.size) || reserve.size <= 0) return NextResponse.json({ error: "Reservation mismatch" }, { status: 409 });
     if (!live && reserve.backupHash && reserve.backupHash !== body.contentHash) return NextResponse.json({ error: "Content hash mismatch" }, { status: 409 });
     const head = await s3.send(new HeadObjectCommand({ Bucket: body.bucket, Key: key }));
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     const counterValues: Record<string,AttributeValue> = { ":size": { N: String(reserve.size) }, ":negative": { N: String(-reserve.size) }, ":active": { S: "ACTIVE" }, ":subject": { S: user.sub }, ...(!live ? { ":one": { N: "1" } } : {}) };
     await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
       ...(reserve.uploadSource === "automatic" ? [suppressionCheck(user.email, mediaType, String(reserve.backupHash))] : []),
-      { Delete: { TableName: table, Key: reservationKey, ConditionExpression: "#key = :key", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: key } } } },
+      { Delete: { TableName: table, Key: reservationKey, ConditionExpression: "#key = :key AND attribute_not_exists(cleanupPending)", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: key } } } },
       { Update: { TableName: table, Key: dbKey, UpdateExpression: `SET ${sets.join(", ")}`, ConditionExpression: "attribute_not_exists(#marker) AND (attribute_not_exists(#erasure) OR (#erasure <> :erasing AND #erasure <> :erased))", ExpressionAttributeNames: names, ExpressionAttributeValues: values } },
       { Update: { TableName: table, Key: { email: { S: user.email }, sk: { S: "PROFILE" } }, UpdateExpression: `ADD usedBytes :size, #bytes :size, reservedBytes :negative${live ? "" : ", #count :one"}`, ConditionExpression: "attribute_exists(sk) AND reservedBytes >= :size AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :subject)", ExpressionAttributeNames: counterNames, ExpressionAttributeValues: counterValues } },
       ...(!live ? [{ Put: { TableName: table, Item: { email: { S: user.email }, sk: { S: `${mediaType === "PHOTO" ? "HASH#PHOTO#" : "HASH#"}${body.contentHash}` }, mediaId: { S: mediaId }, type: { S: mediaType } }, ConditionExpression: "attribute_not_exists(sk) OR mediaId = :id", ExpressionAttributeValues: { ":id": { S: mediaId } } } }] : []),

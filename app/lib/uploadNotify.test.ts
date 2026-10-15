@@ -26,6 +26,7 @@ it.each(["2020-03-04T05:06:07Z", undefined, "invalid", 1234])("persists valid so
   const transaction = mock.database.mock.calls.find(([command]) => command.input.TransactItems)?.[0].input.TransactItems;
   expect(transaction).toBeDefined();
   const media = transaction[1].Update;
+  expect(transaction[0].Delete.ConditionExpression).toContain("attribute_not_exists(cleanupPending)");
   const fields = Object.fromEntries(Object.entries(media.ExpressionAttributeNames).filter(([alias]) => alias.startsWith("#f")).map(([alias, name]) => [name, media.ExpressionAttributeValues[`:v${alias.slice(2)}`]]));
   if (fileLastModified === "2020-03-04T05:06:07Z") {
     expect(fields.fileLastModified).toEqual({ S: "2020-03-04T05:06:07.000Z" });
@@ -35,4 +36,11 @@ it.each(["2020-03-04T05:06:07Z", undefined, "invalid", 1234])("persists valid so
     expect(fields).not.toHaveProperty("fileLastModified");
     expect(media.ExpressionAttributeValues[":source"]).toEqual({ S: "upload" });
   }
+});
+it("does not finalize or release a reservation while cleanup is pending", async () => {
+  mock.database.mockImplementation(async (command: any) => command.input.Key?.sk.S.startsWith("RESERVE#") ? { Item: { key: { S: key }, size: { N: "12" }, cleanupPending: { BOOL: true } } } : {});
+  const response = await POST(new Request("https://example.invalid/api/videos/notify", { method: "POST", body: JSON.stringify({ key, bucket: "development-original", mediaType: "PHOTO", contentHash: "a".repeat(64) + "-12" }) }));
+  expect(response.status).toBe(409);
+  expect(mock.storage).not.toHaveBeenCalled();
+  expect(mock.database.mock.calls.every(([command]) => !command.input.TransactItems)).toBe(true);
 });

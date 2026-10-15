@@ -39,7 +39,7 @@ export async function discardUnconfirmedUpload(email: string, sub: string, key: 
   const reservationKey = { email: { S: email }, sk: { S: type === "PHOTO" ? `RESERVE#PHOTO#${id}` : `RESERVE#${id}` } };
   const result = await ddb.send(new GetItemCommand({ TableName: process.env.VIDEOS_TABLE!, Key: reservationKey, ConsistentRead: true }));
   const reserve = result.Item;
-  if (!reserve || reserve.key?.S !== key || reserve.uploadId?.S !== uploadId || (reserve.ownerSub?.S && reserve.ownerSub.S !== sub)) return false;
+  if (!reserve || reserve.cleanupPending?.BOOL || reserve.key?.S !== key || reserve.uploadId?.S !== uploadId || (reserve.ownerSub?.S && reserve.ownerSub.S !== sub)) return false;
   const mediaKey = { email: { S: email }, sk: { S: `${type}#${id}` } };
   const media = await ddb.send(new GetItemCommand({ TableName: process.env.VIDEOS_TABLE!, Key: mediaKey, ConsistentRead: true }));
   const live = reserve.mediaRole?.S === "liveVideo";
@@ -48,7 +48,7 @@ export async function discardUnconfirmedUpload(email: string, sub: string, key: 
   let removed = false;
   for (let attempt = 0; attempt < 3; attempt++) { try {
     await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
-      { Delete: { TableName: process.env.VIDEOS_TABLE!, Key: reservationKey, ConditionExpression: "#key = :key AND uploadId = :upload", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: key }, ":upload": { S: uploadId } } } },
+      { Delete: { TableName: process.env.VIDEOS_TABLE!, Key: reservationKey, ConditionExpression: "#key = :key AND uploadId = :upload AND attribute_not_exists(cleanupPending)", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: key }, ":upload": { S: uploadId } } } },
       { Update: { TableName: process.env.VIDEOS_TABLE!, Key: { email: { S: email }, sk: { S: "PROFILE" } }, UpdateExpression: "ADD reservedBytes :negative", ConditionExpression: "attribute_exists(sk) AND reservedBytes >= :size AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND (attribute_not_exists(userSub) OR userSub = :sub)", ExpressionAttributeValues: { ":negative": { N: String(-size) }, ":size": { N: String(size) }, ":active": { S: "ACTIVE" }, ":sub": { S: sub } } } },
       ...(live ? [{ Update: { TableName: process.env.VIDEOS_TABLE!, Key: mediaKey, UpdateExpression: "REMOVE liveVideoKey, liveVideoBucket, liveVideoSize", ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(#marker) OR #marker = :no) AND (attribute_not_exists(liveVideoKey) OR liveVideoKey = :key)", ExpressionAttributeNames: { "#marker": marker }, ExpressionAttributeValues: { ":no": { BOOL: false }, ":key": { S: key } } } }] : [{ Put: { TableName: process.env.VIDEOS_TABLE!, Item: { ...mediaKey, status: { S: "DELETED" }, uploadConfirmed: { BOOL: false }, ...(duplicateOf ? { duplicateOf: { S: duplicateOf } } : {}) }, ConditionExpression: "attribute_not_exists(#marker) OR #marker = :no", ExpressionAttributeNames: { "#marker": marker }, ExpressionAttributeValues: { ":no": { BOOL: false } } } }]),
     ] }));
@@ -56,7 +56,7 @@ export async function discardUnconfirmedUpload(email: string, sub: string, key: 
   } catch (error) {
     if (!(error instanceof Error) || error.name !== "TransactionCanceledException") throw error;
     const current = await ddb.send(new GetItemCommand({ TableName: process.env.VIDEOS_TABLE!, Key: reservationKey, ConsistentRead: true }));
-    if (!current.Item || current.Item.key?.S !== key || current.Item.uploadId?.S !== uploadId) break;
+    if (!current.Item || current.Item.cleanupPending?.BOOL || current.Item.key?.S !== key || current.Item.uploadId?.S !== uploadId) break;
     if (attempt === 2) throw error;
   } }
   if (!removed) return false;
