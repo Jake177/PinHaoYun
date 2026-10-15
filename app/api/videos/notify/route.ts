@@ -4,7 +4,7 @@ import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import { getSessionUser } from "@/app/lib/sessionUser";
 import { normaliseContentType } from "@/app/lib/contentType";
-import { buildMediaTimelineFields } from "@/app/lib/mediaTimeline";
+import { buildMediaTimelineFields, normaliseIsoTimestamp } from "@/app/lib/mediaTimeline";
 import { rejectDeletedBackup, suppressionCheck, finalizeConcurrentDuplicate } from "@/app/lib/backupDeletion";
 const region = process.env.COGNITO_REGION || "ap-southeast-2";
 const ddb = new DynamoDBClient({ region }); const s3 = new S3Client({ region });
@@ -49,13 +49,15 @@ export async function POST(request: Request) {
       if (duplicate) return NextResponse.json({ ok: true, duplicate: true, photoId: duplicate });
     }
     const now = new Date().toISOString();
-    const timeline = buildMediaTimelineFields({ email: user.email, mediaType, mediaId, fileLastModified: body.fileLastModified, createdAt: now, fallbackNow: now });
+    const fileLastModified = typeof body.fileLastModified === "string" ? normaliseIsoTimestamp(body.fileLastModified) : null;
+    const timeline = buildMediaTimelineFields({ email: user.email, mediaType, mediaId, fileLastModified, createdAt: now, fallbackNow: now });
     const fields: Record<string, AttributeValue> = {
       type: { S: mediaType }, ownerSub: { S: user.sub }, [marker]: { BOOL: true }, updatedAt: { S: now },
       ...(live ? { liveVideoBucket: { S: body.bucket }, liveVideoKey: { S: key }, liveVideoSize: { N: String(reserve.size) } } : {
         originalBucket: { S: body.bucket }, originalKey: { S: key }, originalName: { S: String(body.originalName || fileName).slice(0,512) },
         contentType: { S: normaliseContentType(body.contentType, body.originalName || key) || "application/octet-stream" },
         size: { N: String(reserve.size) }, contentHash: { S: body.contentHash }, status: { S: "READY" },
+        ...(fileLastModified ? { fileLastModified: { S: fileLastModified } } : {}),
         ...(mediaType === "PHOTO" ? { photoId: { S: mediaId }, originalPhotoKey: { S: key }, originalPhotoBucket: { S: body.bucket } } : { videoId: { S: mediaId } }),
       }),
     };

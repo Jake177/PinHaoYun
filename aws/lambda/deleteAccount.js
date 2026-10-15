@@ -15,6 +15,19 @@ async function deleteObjects(Bucket, Objects) {
     if (response.Errors?.length) throw new Error("Object deletion incomplete");
   }
 }
+async function purgeHistoricalKey(Bucket, Key) {
+  // Snapshot versions before deleting so pagination never depends on removed markers.
+  // Prefix matching alone could erase another user's similarly named object.
+  const objects = [];
+  let KeyMarker, VersionIdMarker, page;
+  do {
+    page = await s3.send(new ListObjectVersionsCommand({ Bucket, Prefix: Key, MaxKeys: 1000, KeyMarker, VersionIdMarker }));
+    objects.push(...[...(page.Versions || []), ...(page.DeleteMarkers || [])]
+      .filter(v => v.Key === Key).map(v => ({ Key, VersionId: v.VersionId })));
+    KeyMarker = page.NextKeyMarker; VersionIdMarker = page.NextVersionIdMarker;
+  } while (page.IsTruncated);
+  await deleteObjects(Bucket, objects);
+}
 async function purgePrefix(Bucket, Prefix) {
   // Restart each page at the beginning while deleting it: no stale continuation keys.
   while (true) {
@@ -49,7 +62,7 @@ async function purgeUser(job) {
     for (const item of records) {
       for (const stem of ["original", "originalPhoto", "thumbnail", "liveVideo", "signature"]) {
         const bucket = item[`${stem}Bucket`]; const key = item[`${stem}Key`];
-        if (key && buckets.includes(bucket)) await deleteObjects(bucket, [{ Key: key }]);
+        if (key && buckets.includes(bucket)) await purgeHistoricalKey(bucket, key);
       }
       await ddb.send(new DeleteItemCommand({ TableName: table, Key: { email: { S: job.email }, sk: { S: item.sk } } }));
     }

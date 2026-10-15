@@ -24,11 +24,15 @@ exports.handler = async () => {
     for (const raw of page.Items || []) {
       const profile = unmarshall(raw);
       if (profile.accountStatus && profile.accountStatus !== "ACTIVE") continue;
-      const deleting = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email", FilterExpression: "#state = :deleting", ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":email": { S: profile.email }, ":deleting": { S: "DELETING" } }, ConsistentRead: true }));
-      for (const rawMedia of deleting.Items || []) {
-        const media = unmarshall(rawMedia), [mediaType, ...parts] = media.sk.split("#");
-        if (["PHOTO", "VIDEO"].includes(mediaType)) await sqs.send(new SendMessageCommand({ QueueUrl: process.env.VIDEOS_DELETE_QUEUE_URL, MessageBody: JSON.stringify({ email: profile.email, mediaId: parts.join("#"), mediaType, userSub: profile.userSub }) }));
-      }
+      let deletionCursor;
+      do {
+        const deleting = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email", FilterExpression: "#state = :deleting", ExpressionAttributeNames: { "#state": "status" }, ExpressionAttributeValues: { ":email": { S: profile.email }, ":deleting": { S: "DELETING" } }, ConsistentRead: true, ExclusiveStartKey: deletionCursor }));
+        for (const rawMedia of deleting.Items || []) {
+          const media = unmarshall(rawMedia), [mediaType, ...parts] = media.sk.split("#");
+          if (["PHOTO", "VIDEO"].includes(mediaType)) await sqs.send(new SendMessageCommand({ QueueUrl: process.env.VIDEOS_DELETE_QUEUE_URL, MessageBody: JSON.stringify({ email: profile.email, mediaId: parts.join("#"), mediaType, userSub: profile.userSub }) }));
+        }
+        deletionCursor = deleting.LastEvaluatedKey;
+      } while (deletionCursor);
       const fresh = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email AND begins_with(sk, :reserve)", ExpressionAttributeValues: { ":email": { S: profile.email }, ":reserve": { S: "RESERVE#" } }, ConsistentRead: true }));
       if (fresh.LastEvaluatedKey) continue; // ponytail: skip oversized reservation sets; paginate if an account holds >1MB of reservations.
       let total = 0, stable = true;
