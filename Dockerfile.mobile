@@ -1,0 +1,18 @@
+FROM node:24-alpine AS build
+WORKDIR /app
+RUN npm install --global pnpm@11.25.0
+COPY package.json pnpm-lock.yaml ./
+COPY deploy/pnpm-workspace.mobile.yaml ./pnpm-workspace.yaml
+RUN pnpm install --frozen-lockfile
+COPY . .
+COPY deploy/pnpm-workspace.mobile.yaml ./pnpm-workspace.yaml
+ENV NEXT_TELEMETRY_DISABLED=1 PH_API_ONLY_BUILD=true
+RUN pnpm exec vitest run && pnpm exec next build --webpack
+
+FROM node:24-alpine
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+COPY --from=build --chown=node:node /app/.next/standalone ./
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

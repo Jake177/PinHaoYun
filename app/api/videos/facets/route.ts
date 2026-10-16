@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import {
   DynamoDBClient,
   QueryCommand,
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
-import { decodeIdToken } from "@/app/lib/jwt";
+import { getSessionUser } from "@/app/lib/sessionUser";
 import {
   mapDbMediaItem,
   queryAllMediaForUser,
@@ -67,13 +66,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const cookieStore = await cookies();
-    const token = cookieStore.get("id_token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const payload = decodeIdToken(token) as Record<string, unknown>;
+    const user = await getSessionUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const payload = user.claims;
     const email =
       (payload.email as string) ||
       (payload["cognito:username"] as string) ||

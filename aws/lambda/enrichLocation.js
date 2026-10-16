@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites } = require("./accountGuard");
 "use strict";
 
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
@@ -7,7 +8,7 @@ const TABLE_NAME = process.env.VIDEOS_TABLE;
 const MAPBOX_TOKEN =
   process.env.MAPBOX_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-const ddb = new DynamoDBClient({ region });
+const ddb = protectMediaWrites(new DynamoDBClient({ region }), true);
 
 const isValidCoord = (value, min, max) =>
   Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max;
@@ -46,23 +47,24 @@ exports.handler = async (event) => {
     try {
       const body = record.body ? JSON.parse(record.body) : {};
       const email = body.email ? String(body.email).toLowerCase() : "";
+      if (!email || !await canProcess(email, undefined, body.userSub)) continue;
       const videoId = body.videoId ? String(body.videoId) : "";
       const mediaType = body.mediaType === "PHOTO" ? "PHOTO" : "VIDEO";
       const lat = Number(body.lat);
       const lon = Number(body.lon);
 
       if (!email || !videoId) {
-        console.warn("Skipping location enrichment with missing info", body);
+        console.warn("Skipping location enrichment with missing info");
         continue;
       }
       if (!isValidCoord(lat, -90, 90) || !isValidCoord(lon, -180, 180)) {
-        console.warn("Skipping location enrichment with invalid coords", body);
+        console.warn("Skipping location enrichment with invalid coords");
         continue;
       }
 
       const geo = await reverseGeocode(lat, lon);
       if (!geo || !geo.address) {
-        console.warn("No address found for coords", { lat, lon, email, videoId });
+        console.warn("No address found for location enrichment");
         continue;
       }
 

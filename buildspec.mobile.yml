@@ -1,0 +1,13 @@
+version: 0.2
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$REPOSITORY_URI"
+  build:
+    commands:
+      - docker build --platform linux/amd64 -f Dockerfile.mobile -t "$REPOSITORY_URI:$IMAGE_TAG" .
+      - sh deploy/smoke-mobile.sh
+  post_build:
+    commands:
+      - test "$CODEBUILD_BUILD_SUCCEEDING" = "1"
+      - docker push "$REPOSITORY_URI:$IMAGE_TAG"

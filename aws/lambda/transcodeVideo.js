@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites, verifiedUserSub, cleanupRejectedObjects } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract video metadata with ffprobe and update DynamoDB.
 // Requires ffprobe in a Lambda layer (default path: /opt/bin/ffprobe).
@@ -5,8 +6,8 @@
 const { S3Client, GetObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { DynamoDBClient, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
-const { createWriteStream, createReadStream } = require("node:fs");
-const { unlink } = require("node:fs/promises");
+const { createWriteStream } = require("node:fs");
+const { unlink, readFile } = require("node:fs/promises");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { pipeline } = require("node:stream/promises");
@@ -17,7 +18,7 @@ const { buildMediaTimelineFields } = require("./timeline");
 const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
+const ddb = protectMediaWrites(new DynamoDBClient({}));
 const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
@@ -97,14 +98,14 @@ const makeThumbnail = async ({ bucket, key, userId, videoId, filePath }) => {
       "-i",
       filePath,
       "-ss",
-      "1",
+      "0",
       "-vframes",
       "1",
       "-vf",
       "scale=640:-1",
       tmpThumb,
     ]);
-    const body = createReadStream(tmpThumb);
+    const body = await readFile(tmpThumb);
     await s3.send(
       new PutObjectCommand({
         Bucket: THUMBNAIL_BUCKET,
@@ -131,6 +132,7 @@ const toAttrString = (value) => ({ S: String(value) });
           QueueUrl: LOCATION_ENRICH_QUEUE_URL,
           MessageBody: JSON.stringify({
             email,
+            userSub: verifiedUserSub(email),
             videoId,
             mediaType: "VIDEO",
             lat,
@@ -336,19 +338,21 @@ exports.handler = async (event) => {
         continue;
       }
 
+      // The destination is deterministic, so a replay can finish thumbnail cleanup
+      // even when the original was removed by the previous attempt.
+      const generated = THUMBNAIL_BUCKET ? [{ Bucket: THUMBNAIL_BUCKET, Key: `video/${encodeURIComponent(userId)}/${videoId}.jpg` }] : [];
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) {
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
+        continue;
+      }
       const tmpPath = await downloadToTmp(bucket, decodedKey);
+      let thumbResult = null;
       try {
         const probe = await runFfprobe(tmpPath);
         // Log tags for troubleshooting missing metadata (redact to avoid huge output)
-        const videoStream = (Array.isArray(probe.streams) ? probe.streams : []).find(
-          (s) => s.codec_type === "video",
-        ) || {};
-        console.log("ffprobe tags sample", {
-          formatTags: probe.format?.tags,
-          videoTags: videoStream.tags,
-        });
+
+
         const metadata = extractMetadata(probe);
-        let thumbResult = null;
         try {
           thumbResult = await makeThumbnail({
             bucket,
@@ -377,9 +381,11 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
       }
     } catch (error) {
       console.error("Failed to process record", error);
+      throw error;
     }
   }
 

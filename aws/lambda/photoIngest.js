@@ -1,3 +1,4 @@
+const { canProcess, protectMediaWrites, verifiedUserSub, cleanupRejectedObjects } = require("./accountGuard");
 "use strict";
 // S3-triggered Lambda: extract photo metadata and create thumbnails with ImageMagick.
 
@@ -17,7 +18,7 @@ const { buildMediaTimelineFields } = require("./timeline");
 const execFileAsync = promisify(execFile);
 
 const s3 = new S3Client({});
-const ddb = new DynamoDBClient({});
+const ddb = protectMediaWrites(new DynamoDBClient({}));
 const sqs = new SQSClient({});
 
 const TABLE_NAME = process.env.VIDEOS_TABLE;
@@ -493,17 +494,6 @@ const extractMetadata = async (filePath) => {
     captureAlt: captureAltCandidate,
     orientation: orientationCandidate,
   };
-  console.log("photo metadata sample", {
-    width: result.width,
-    height: result.height,
-    captureTime: result.captureTime,
-    deviceMake: result.deviceMake,
-    deviceModel: result.deviceModel,
-    deviceSoftware: result.deviceSoftware,
-    captureLat: result.captureLat,
-    captureLon: result.captureLon,
-    orientation: result.orientation,
-  });
   return result;
 };
 
@@ -554,6 +544,7 @@ const enqueueLocationEnrichment = async ({ email, photoId, lat, lon }) => {
         QueueUrl: LOCATION_ENRICH_QUEUE_URL,
         MessageBody: JSON.stringify({
           email,
+          userSub: verifiedUserSub(email),
           videoId: photoId,
           mediaType: "PHOTO",
           lat,
@@ -598,8 +589,13 @@ exports.handler = async (event) => {
       const fileName = parts[parts.length - 1];
       const photoId = fileName.split("_")[0];
       if (!userId || !photoId) continue;
-
       const isLiveVideo = fileName.includes("_live.") || fileName.toLowerCase().endsWith(".mov");
+      // Live Photo movies share their still image's ID but do not create a thumbnail.
+      const generated = !isLiveVideo && THUMBNAIL_BUCKET ? [{ Bucket: THUMBNAIL_BUCKET, Key: `photo/${userId}/${photoId}.jpg` }] : [];
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) {
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
+        continue;
+      }
       const now = new Date().toISOString();
 
       if (isLiveVideo) {
@@ -622,19 +618,24 @@ exports.handler = async (event) => {
           updateParts.splice(2, 0, "liveVideoSize = :liveSize");
           values[":liveSize"] = { N: String(liveVideoSize) };
         }
-        await ddb.send(
-          new UpdateItemCommand({
-            TableName: TABLE_NAME,
-            Key: { email: { S: userId }, sk: { S: `PHOTO#${photoId}` } },
-            UpdateExpression: `SET ${updateParts.join(", ")}`,
-            ExpressionAttributeNames: names,
-            ExpressionAttributeValues: values,
-          }),
-        );
+        try {
+          await ddb.send(
+            new UpdateItemCommand({
+              TableName: TABLE_NAME,
+              Key: { email: { S: userId }, sk: { S: `PHOTO#${photoId}` } },
+              UpdateExpression: `SET ${updateParts.join(", ")}`,
+              ExpressionAttributeNames: names,
+              ExpressionAttributeValues: values,
+            }),
+          );
+        } finally {
+          await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey });
+        }
         continue;
       }
 
       const { tmpPath, contentType } = await downloadToTmp(bucket, decodedKey);
+      let thumbResult = null;
       try {
         let metadata = {};
         try {
@@ -642,7 +643,6 @@ exports.handler = async (event) => {
         } catch (error) {
           console.warn("Failed to extract photo metadata", error);
         }
-        let thumbResult = null;
         try {
           thumbResult = await makeThumbnail({
             filePath: tmpPath,
@@ -739,9 +739,12 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
       }
     } catch (error) {
       console.error("Failed to process photo record", error);
+      // Preserve S3/Lambda retry behavior when a write or rejection cleanup fails.
+      throw error;
     }
   }
 

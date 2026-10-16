@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyIdToken } from "@/app/lib/jwt";
+import { verifyIdToken, verifyAccessToken } from "@/app/lib/jwt";
 
 export async function POST(request: Request) {
   try {
@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     }
 
     const payload = await verifyIdToken(idToken);
+    if (accessToken) await verifyAccessToken(accessToken, payload);
 
     const exp = typeof payload.exp === "number" ? payload.exp : undefined;
     const res = NextResponse.json({ ok: true });
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     }
 
     return res;
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       { error: "Invalid token" },
       { status: 401 }

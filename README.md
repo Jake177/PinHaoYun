@@ -4,6 +4,14 @@ PinHaoYun is a personal cloud media library for uploading, organising, and revis
 
 Built with Next.js on the frontend, and AWS (Lambda/S3/DynamoDB/SQS/Cognito) for storage and background processing.
 
+## Isolated iOS backup beta
+
+The `feat/mobile-backup` branch builds on mobile API compatibility. Optional upload source/request IDs support automatic backup suppression, response-loss recovery and concurrent duplicate finalization while preserving legacy Web callers. Cloud deletion records content fingerprints before dispatch; processing and quota changes are fenced by account/media lifecycle and the original upload reservation. Explicit cancellation also clears completed-but-unfinalized originals. Fingerprints are removed during account erasure.
+
+`Dockerfile.mobile` and `buildspec.mobile.yml` provide an API-only standalone container with a health check, test signup allowlist and runtime secrets. The normal Web workspace/build configuration is retained; container build policy lives under `deploy/`. Resource templates and deployment scripts live in the companion `pinhaoyun_ios` repository and target only the isolated Sydney environment. No production rollout is part of this branch.
+
+Validation: 46 Vitest tests, TypeScript and changed-file ESLint pass; hosted integration covers exact accounting/bytes, Cookie/Bearer and owner isolation, deletion races, manual restoration, init replay and recovery. Genuine Photos/iCloud/background device acceptance is tracked in the companion repository.
+
 ## Tech Stack
 
 - Frontend: Next.js 16.1.1 , React 19, TypeScript, Material UI
