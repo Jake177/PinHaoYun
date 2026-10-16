@@ -14,10 +14,11 @@ let transactions: unknown[];
 let nonce: string | undefined;
 let media: Record<string, unknown> | undefined;
 let transactionFailures: number;
+let failRelease: boolean;
 const update = () => new db.UpdateItemCommand({ TableName: "development-media", Key: { email: { S: email }, sk: { S: "PHOTO#asset" } }, UpdateExpression: "SET updatedAt = :now", ExpressionAttributeValues: { ":now": { S: "now" } } });
 beforeEach(async () => {
   vi.stubEnv("VIDEOS_TABLE", "development-media"); vi.stubEnv("S3_ORIGINAL_BUCKET", object.Bucket);
-  deleted = false; source = "automatic"; reservation = undefined; transactions = []; nonce = undefined; media = undefined; transactionFailures = 0;
+  deleted = false; source = "automatic"; reservation = undefined; transactions = []; nonce = undefined; media = undefined; transactionFailures = 0; failRelease = false;
   vi.spyOn(db.DynamoDBClient.prototype, "send").mockImplementation(async (...args: unknown[]) => {
     const command = args[0] as { input: { Key?: { sk: { S: string } }; TransactItems?: unknown[] } };
     const sk = command.input.Key?.sk.S;
@@ -25,7 +26,7 @@ beforeEach(async () => {
     if (sk?.startsWith("BACKUP_DELETED#")) return deleted ? { Item: { sk: { S: sk } } } : {};
     if (sk?.startsWith("RESERVE#")) return reservation ? { Item: reservation } : {};
     if (sk?.startsWith("PHOTO#")) return media ? { Item: media } : {};
-    if (command.input.TransactItems) { transactions.push(command.input.TransactItems); if (transactionFailures-- > 0) throw Object.assign(new Error("conflict"), { name: "TransactionCanceledException" }); }
+    if (command.input.TransactItems) { transactions.push(command.input.TransactItems); if ((!failRelease || (command.input.TransactItems[0] as any).Delete) && transactionFailures-- > 0) throw Object.assign(new Error("conflict"), { name: "TransactionCanceledException" }); }
     return {};
   });
   vi.spyOn(storage.S3Client.prototype, "send").mockImplementation(async (...args: unknown[]) => (args[0] as { constructor: { name: string } }).constructor.name === "HeadObjectCommand" ? { Metadata: { "owner-sub": subject, "upload-source": source, "backup-hash": hash, ...(nonce ? { "upload-request-id": nonce } : {}) } } : {});
@@ -67,8 +68,9 @@ describe("automatic backup deletion", () => {
     deleted = true;
     reservation = { key: { S: object.Key }, uploadId: { S: "upload" }, size: { N: "12" }, uploadSource: { S: "automatic" }, backupHash: { S: hash } };
     expect(await rejectDeletedBackup(email, subject, object.Key)).toBe(true);
-    expect(transactions).toHaveLength(1);
-    expect(transactions[0]).toMatchObject([{}, { Update: { UpdateExpression: "ADD reservedBytes :negative", ExpressionAttributeValues: { ":negative": { N: "-12" } } } }, { Put: { Item: { status: { S: "DELETED" }, uploadConfirmed: { BOOL: false } } } }]);
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0]).toMatchObject([{ Update: { UpdateExpression: expect.stringContaining("cleanupPending = :yes") } }, {}, {}]);
+    expect(transactions[1]).toMatchObject([{}, { Put: { Item: { status: { S: "DELETED" }, uploadConfirmed: { BOOL: false } } } }, { Update: { UpdateExpression: "ADD reservedBytes :negative", ExpressionAttributeValues: { ":negative": { N: "-12" } } } }]);
   });
   it("uses the reservation source so manual reuploads remain allowed", async () => {
     deleted = true;
@@ -87,7 +89,7 @@ describe("automatic backup deletion", () => {
   });
   it("rejects a cleaning lease and prevents cancellation from dropping its durable references", async () => {
     nonce = "fixture-nonce";
-    reservation = { key: { S: object.Key }, requestId: { S: nonce }, uploadId: { S: "upload" }, cleanupPending: { BOOL: true } };
+    reservation = { key: { S: object.Key }, requestId: { S: nonce }, uploadId: { S: "upload" }, cleanupPending: { BOOL: true }, cleanupOwner: { S: "other-worker" }, cleanupLeaseUntil: { N: String(Date.now() + 60000) } };
     expect(await guard.canProcess(email, object)).toBe(false);
     expect(await discardUnconfirmedUpload(email, subject, object.Key, "upload")).toBe(false);
     expect(transactions).toHaveLength(0);
@@ -120,9 +122,9 @@ describe("automatic backup deletion", () => {
     expect(await guard.canProcess(email, object)).toBe(true);
   });
   it("retries quota-release conflicts instead of silently keeping reserved bytes", async () => {
-    deleted = true; transactionFailures = 1;
+    deleted = true; transactionFailures = 1; failRelease = true;
     reservation = { key: { S: object.Key }, uploadId: { S: "upload" }, size: { N: "12" }, uploadSource: { S: "automatic" }, backupHash: { S: hash } };
     expect(await rejectDeletedBackup(email, subject, object.Key)).toBe(true);
-    expect(transactions).toHaveLength(2);
+    expect(transactions).toHaveLength(4);
   });
 });

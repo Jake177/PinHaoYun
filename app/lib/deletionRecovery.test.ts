@@ -30,6 +30,54 @@ function worker(path: string) {
 }
 
 describe("historical account object erasure", () => {
+  it.each(["development-profile", undefined, "external-profile"])("checks a PROFILE signature before retaining the profile for quiescence (bucket=%s)", async signatureBucket => {
+    const activeJob = { ...job, quiesced: false };
+    const profile = { email, sk: "PROFILE", userSub: job.userSub, deletionRequestId: job.requestId, signatureKey: "legacy/profile-signature.png", ...(signatureBucket ? { signatureBucket } : {}) };
+    const cursors: unknown[] = [];
+    const ddb = vi.spyOn(db.DynamoDBClient.prototype, "send").mockImplementation(async (command: any) => {
+      if (command instanceof db.GetItemCommand) return { Item: marshall(command.input.TableName === "development-deletions" ? activeJob : profile) };
+      if (command instanceof db.QueryCommand) {
+        cursors.push(command.input.ExclusiveStartKey);
+        if (cursors.length > 3) throw new Error("Partition cleanup did not advance");
+        // A page containing only retained records still has to advance.
+        if (!command.input.ExclusiveStartKey) return { Items: [marshall(profile), marshall({ email, sk: "CONSENT" })], LastEvaluatedKey: { email: { S: email }, sk: { S: "PROFILE" } } };
+        return { Items: [marshall({ email, sk: "RESERVE#legacy" })] };
+      }
+      return {};
+    });
+    const s3 = vi.mocked(storage.S3Client.prototype.send).mockImplementation(async (command: any) => command instanceof storage.ListObjectVersionsCommand && command.input.Prefix === profile.signatureKey ? { Versions: [{ Key: profile.signatureKey, VersionId: "old" }, { Key: `${profile.signatureKey}.other-owner`, VersionId: "neighbor" }], DeleteMarkers: [{ Key: profile.signatureKey, VersionId: "marker" }] } : {});
+    expect(await worker("../../aws/lambda/deleteAccount.js").handler(event)).toEqual({ batchItemFailures: [] });
+    expect(cursors).toEqual([undefined, { email: { S: email }, sk: { S: "PROFILE" } }]);
+    const removed = s3.mock.calls.filter(([command]: any) => command instanceof storage.DeleteObjectsCommand).map(([command]: any) => command.input);
+    expect(removed).toEqual(signatureBucket === "external-profile" ? [] : [{ Bucket: "development-profile", Delete: { Quiet: true, Objects: [{ Key: profile.signatureKey, VersionId: "old" }, { Key: profile.signatureKey, VersionId: "marker" }] } }]);
+    const deletedRecords = ddb.mock.calls.filter(([command]: any) => command instanceof db.DeleteItemCommand).map(([command]: any) => command.input.Key.sk.S);
+    expect(deletedRecords).toEqual(["RESERVE#legacy"]);
+    expect(vi.mocked(identity.CognitoIdentityProviderClient.prototype.send).mock.calls.some(([command]: any) => command instanceof identity.AdminDeleteUserCommand)).toBe(false);
+    expect(ddb.mock.calls.some(([command]: any) => command.input.ExpressionAttributeValues?.[":done"]?.S === "COMPLETE" && command.input.UpdateExpression?.includes("completedAt"))).toBe(false);
+  });
+
+  it("retains a failed profile signature reference and retries before completing account erasure", async () => {
+    const profile = { email, sk: "PROFILE", userSub: job.userSub, deletionRequestId: job.requestId, signatureBucket: "development-profile", signatureKey: "legacy/signature.png" };
+    let fail = true;
+    const ddb = vi.spyOn(db.DynamoDBClient.prototype, "send").mockImplementation(async (command: any) => {
+      if (command instanceof db.GetItemCommand) return { Item: marshall(command.input.TableName === "development-deletions" ? job : profile) };
+      if (command instanceof db.QueryCommand) return { Items: [marshall(profile)] };
+      return {};
+    });
+    vi.mocked(storage.S3Client.prototype.send).mockImplementation(async (command: any) => {
+      if (command instanceof storage.ListObjectVersionsCommand && command.input.Prefix === profile.signatureKey) return { Versions: [{ Key: profile.signatureKey, VersionId: "legacy" }] };
+      if (command instanceof storage.DeleteObjectsCommand && fail) return { Errors: [{ Code: "AccessDenied" }] };
+      return {};
+    });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = worker("../../aws/lambda/deleteAccount.js").handler;
+    expect(await handler(event)).toEqual({ batchItemFailures: [{ itemIdentifier: "message" }] });
+    expect(ddb.mock.calls.some(([command]: any) => command instanceof db.DeleteItemCommand)).toBe(false);
+    fail = false;
+    expect(await handler(event)).toEqual({ batchItemFailures: [] });
+    expect(ddb.mock.calls.some(([command]: any) => command instanceof db.DeleteItemCommand && command.input.Key.sk.S === "PROFILE")).toBe(true);
+  });
+
   const record = {
     email, sk: "PHOTO#legacy",
     originalBucket: "development-original", originalKey: "legacy/original.heic",

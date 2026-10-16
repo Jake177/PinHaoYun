@@ -1,8 +1,9 @@
 "use strict";
-const { DynamoDBClient, ScanCommand, QueryCommand, GetItemCommand, UpdateItemCommand, TransactWriteItemsCommand } = require("@aws-sdk/client-dynamodb");
-const { S3Client, AbortMultipartUploadCommand, HeadObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { DynamoDBClient, ScanCommand, QueryCommand, UpdateItemCommand } = require("@aws-sdk/client-dynamodb");
+const { S3Client, AbortMultipartUploadCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { SQSClient, SendMessageCommand } = require("@aws-sdk/client-sqs");
 const sqs = new SQSClient({});
+const { discardUpload } = require("./uploadCleanup");
 const { unmarshall } = require("@aws-sdk/util-dynamodb");
 const ddb = new DynamoDBClient({}); const s3 = new S3Client({});
 async function keepCompleted(table, profile, r) {
@@ -17,31 +18,6 @@ async function keepCompleted(table, profile, r) {
     if (["NotFound", "NoSuchKey", "ConditionalCheckFailedException"].includes(error.name) || error.$metadata?.httpStatusCode === 404) return false;
     throw error;
   }
-}
-async function discardExpired(table, profile, r) {
-  const live = r.mediaRole === "liveVideo";
-  const type = r.sk.startsWith("RESERVE#PHOTO#") ? "PHOTO" : "VIDEO";
-  const id = r.sk.slice(type === "PHOTO" ? "RESERVE#PHOTO#".length : "RESERVE#".length);
-  const Key = { email: { S: profile.email }, sk: { S: `${type}#${id}` } };
-  const reservationKey = { email: { S: profile.email }, sk: { S: r.sk } };
-  const marker = live ? "liveUploadConfirmed" : "uploadConfirmed";
-  const mediaValues = { ":no": { BOOL: false }, ...(live ? { ":key": { S: r.key }, ":bucket": { S: process.env.S3_ORIGINAL_BUCKET } } : { ":deleted": { S: "DELETED" } }) };
-  // Fence finalizers and processors first, but retain the reservation, its quota
-  // and object references until S3 cleanup succeeds. Removing TTL makes retries durable.
-  await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
-    { Update: { TableName: table, Key: reservationKey, UpdateExpression: "SET cleanupPending = :yes REMOVE expiresAt", ConditionExpression: "#key = :key AND uploadId = :upload", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":yes": { BOOL: true }, ":key": { S: r.key }, ":upload": { S: r.uploadId } } } },
-    { Update: { TableName: table, Key, UpdateExpression: live ? "SET rejectedUploadKey = :key, liveVideoKey = :key, liveVideoBucket = :bucket" : "SET #state = :deleted, #marker = :no", ConditionExpression: "(attribute_not_exists(#marker) OR #marker = :no)" + (live ? " AND (attribute_not_exists(liveVideoKey) OR liveVideoKey = :key)" : ""), ExpressionAttributeNames: { "#marker": marker, ...(!live ? { "#state": "status" } : {}) }, ExpressionAttributeValues: mediaValues } },
-    { ConditionCheck: { TableName: table, Key: { email: { S: profile.email }, sk: { S: "PROFILE" } }, ConditionExpression: "attribute_exists(sk) AND (attribute_not_exists(accountStatus) OR accountStatus = :active) AND " + (profile.userSub ? "userSub = :sub" : "attribute_not_exists(userSub)"), ExpressionAttributeValues: { ":active": { S: "ACTIVE" }, ...(profile.userSub ? { ":sub": { S: profile.userSub } } : {}) } } },
-  ] }));
-  // Read after fencing so the last successful processor's thumbnail is included.
-  const media = await ddb.send(new GetItemCommand({ TableName: table, Key, ConsistentRead: true }));
-  const item = media.Item ? unmarshall(media.Item) : {};
-  await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_ORIGINAL_BUCKET, Key: r.key }));
-  if (!live && item.thumbnailKey && item.thumbnailBucket === process.env.S3_THUMBNAIL_BUCKET) await s3.send(new DeleteObjectCommand({ Bucket: item.thumbnailBucket, Key: item.thumbnailKey }));
-  await ddb.send(new TransactWriteItemsCommand({ TransactItems: [
-    { Delete: { TableName: table, Key: reservationKey, ConditionExpression: "#key = :key AND uploadId = :upload AND cleanupPending = :yes", ExpressionAttributeNames: { "#key": "key" }, ExpressionAttributeValues: { ":key": { S: r.key }, ":upload": { S: r.uploadId }, ":yes": { BOOL: true } } } },
-    ...(live ? [{ Update: { TableName: table, Key, UpdateExpression: "REMOVE liveVideoKey, liveVideoBucket, liveVideoSize", ConditionExpression: "rejectedUploadKey = :key AND (attribute_not_exists(#marker) OR #marker = :no)", ExpressionAttributeNames: { "#marker": marker }, ExpressionAttributeValues: { ":key": { S: r.key }, ":no": { BOOL: false } } } }] : [{ Put: { TableName: table, Item: { ...Key, status: { S: "DELETED" }, uploadConfirmed: { BOOL: false } }, ConditionExpression: "#state = :deleted AND #marker = :no", ExpressionAttributeNames: { "#state": "status", "#marker": marker }, ExpressionAttributeValues: { ":deleted": { S: "DELETED" }, ":no": { BOOL: false } } } }]),
-  ] }));
 }
 exports.handler = async () => {
   const table = process.env.VIDEOS_TABLE; let cursor;
@@ -65,6 +41,7 @@ exports.handler = async () => {
         const fresh = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email AND begins_with(sk, :reserve)", ExpressionAttributeValues: { ":email": { S: profile.email }, ":reserve": { S: "RESERVE#" } }, ConsistentRead: true, ExclusiveStartKey: reservationCursor }));
         for (const item of fresh.Items || []) {
           const r = unmarshall(item);
+          if (r.cleanupOwner && r.cleanupLeaseUntil > Date.now()) { total += Number(r.size || 0); continue; }
           if (!r.cleanupPending && r.expiresAt > Date.now() / 1000) { total += Number(r.size || 0); continue; }
           // Completed originals must survive suspension before API finalization.
           // Their quota remains reserved until completion or explicit cancellation.
@@ -76,7 +53,7 @@ exports.handler = async () => {
               if (await keepCompleted(table, profile, r)) { total += Number(r.size || 0); continue; }
             }
           }
-          try { await discardExpired(table, profile, r); }
+          try { if (!await discardUpload({ ddb, s3, table, email: profile.email, sub: profile.userSub, reservation: r, releaseQuota: false })) stable = false; }
           catch (error) { if (error.name !== "TransactionCanceledException") throw error; stable = false; }
         }
         reservationCursor = fresh.LastEvaluatedKey;

@@ -56,20 +56,21 @@ async function purgeUser(job) {
   }
   // Historical records can use paths outside today's conventions. Read their exact
   // object references, restricted to this deployment's private buckets.
-  while (true) {
-    const page = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email", ExpressionAttributeValues: { ":email": { S: job.email } }, ConsistentRead: true }));
-    const records = (page.Items || []).map(unmarshall).filter(i => i.sk !== "PROFILE" && i.sk !== "CONSENT");
+  let cursor;
+  do {
+    const page = await ddb.send(new QueryCommand({ TableName: table, KeyConditionExpression: "email = :email", ExpressionAttributeValues: { ":email": { S: job.email } }, ConsistentRead: true, ExclusiveStartKey: cursor }));
+    const records = (page.Items || []).map(unmarshall).filter(i => i.sk !== "CONSENT");
     for (const item of records) {
       for (const stem of ["original", "originalPhoto", "thumbnail", "liveVideo", "signature"]) {
-        const bucket = item[`${stem}Bucket`]; const key = item[`${stem}Key`];
+        const bucket = item[`${stem}Bucket`] || (stem === "signature" ? process.env.S3_PROFILE_BUCKET : undefined); const key = item[`${stem}Key`];
         if (key && buckets.includes(bucket)) await purgeHistoricalKey(bucket, key);
       }
-      await ddb.send(new DeleteItemCommand({ TableName: table, Key: { email: { S: job.email }, sk: { S: item.sk } } }));
+      // PROFILE holds legacy signature references, but must remain until the
+      // quiescence pass and Cognito deletion finish successfully.
+      if (item.sk !== "PROFILE") await ddb.send(new DeleteItemCommand({ TableName: table, Key: { email: { S: job.email }, sk: { S: item.sk } } }));
     }
-    if (!page.LastEvaluatedKey) break;
-    // PROFILE and CONSENT are the only retained partition records; deleted pages
-    // disappear, so repeating the query eventually reaches the final page.
-  }
+    cursor = page.LastEvaluatedKey;
+  } while (cursor);
 }
 async function processJob(requestId) {
   const response = await ddb.send(new GetItemCommand({ TableName: jobs, Key: { requestId: { S: requestId } }, ConsistentRead: true }));
