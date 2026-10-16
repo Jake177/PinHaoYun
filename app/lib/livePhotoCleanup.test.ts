@@ -33,3 +33,13 @@ it.each([false, true])("rechecks Live Photo movie cleanup when a fenced write fa
   expect(deletes).toHaveLength(deleted ? 1 : 0);
   if (deleted) expect((deletes[0][0] as { input: unknown }).input).toEqual({ Bucket: "development-original", Key: key });
 });
+it("does not delete a still image's thumbnail when replaying a rejected Live Photo movie", async () => {
+  vi.spyOn(db.DynamoDBClient.prototype, "send").mockImplementation(async (command: any) => ({ Item: command.input.Key.sk.S === "PROFILE" ? { userSub: { S: "owner" }, accountStatus: { S: "ACTIVE" } } : { status: { S: "READY" }, uploadConfirmed: { BOOL: true }, rejectedUploadKey: { S: key } } }));
+  const s3 = vi.spyOn(storage.S3Client.prototype, "send").mockResolvedValue({ Metadata: { "owner-sub": "owner" } });
+  const path = "../../aws/lambda/photoIngest.js";
+  delete load.cache[load.resolve(path)];
+  await expect(load(path).handler({ Records: [{ s3: { bucket: { name: "development-original" }, object: { key, size: 12 } } }] })).resolves.toEqual({ ok: true });
+  const deletes = s3.mock.calls.filter(([command]: any) => command instanceof storage.DeleteObjectCommand);
+  expect(deletes.length).toBeGreaterThan(0);
+  for (const [command] of deletes as any) expect(command.input).toEqual({ Bucket: "development-original", Key: key });
+});

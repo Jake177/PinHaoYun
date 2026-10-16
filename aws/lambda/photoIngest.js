@@ -589,9 +589,13 @@ exports.handler = async (event) => {
       const fileName = parts[parts.length - 1];
       const photoId = fileName.split("_")[0];
       if (!userId || !photoId) continue;
-      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
-
       const isLiveVideo = fileName.includes("_live.") || fileName.toLowerCase().endsWith(".mov");
+      // Live Photo movies share their still image's ID but do not create a thumbnail.
+      const generated = !isLiveVideo && THUMBNAIL_BUCKET ? [{ Bucket: THUMBNAIL_BUCKET, Key: `photo/${userId}/${photoId}.jpg` }] : [];
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) {
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
+        continue;
+      }
       const now = new Date().toISOString();
 
       if (isLiveVideo) {
@@ -735,7 +739,7 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
-        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, thumbResult ? [{ Bucket: thumbResult.bucket, Key: thumbResult.key }] : []);
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
       }
     } catch (error) {
       console.error("Failed to process photo record", error);

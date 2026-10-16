@@ -338,7 +338,13 @@ exports.handler = async (event) => {
         continue;
       }
 
-      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) continue;
+      // The destination is deterministic, so a replay can finish thumbnail cleanup
+      // even when the original was removed by the previous attempt.
+      const generated = THUMBNAIL_BUCKET ? [{ Bucket: THUMBNAIL_BUCKET, Key: `video/${encodeURIComponent(userId)}/${videoId}.jpg` }] : [];
+      if (!await canProcess(userId, { Bucket: bucket, Key: decodedKey })) {
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
+        continue;
+      }
       const tmpPath = await downloadToTmp(bucket, decodedKey);
       let thumbResult = null;
       try {
@@ -375,10 +381,11 @@ exports.handler = async (event) => {
         });
       } finally {
         await unlink(tmpPath).catch(() => {});
-        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, thumbResult ? [{ Bucket: thumbResult.bucket, Key: thumbResult.key }] : []);
+        await cleanupRejectedObjects(userId, { Bucket: bucket, Key: decodedKey }, generated);
       }
     } catch (error) {
       console.error("Failed to process record", error);
+      throw error;
     }
   }
 
